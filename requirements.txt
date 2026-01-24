@@ -1,0 +1,10 @@
+alembic
+pydantic
+pydantic-settings
+aiogram
+aiogram-dialog
+sqlalchemy
+asyncpg
+openpyxl
+apscheduler
+pandas

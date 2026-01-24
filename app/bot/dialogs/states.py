@@ -1,0 +1,53 @@
+from aiogram.fsm.state import StatesGroup, State
+
+
+class RegistrationSG(StatesGroup):
+    full_name = State()
+    phone = State()
+    city = State()
+    gender = State()
+    waiting = State()
+
+
+class MainMenuSG(StatesGroup):
+    main = State()
+
+
+class PaymentsSG(StatesGroup):
+    main = State()
+
+
+class RulesSG(StatesGroup):
+    main = State()
+    formatting = State()
+    passability = State()
+
+
+class ContactsSG(StatesGroup):
+    main = State()
+
+
+class ProfileSG(StatesGroup):
+    main = State()
+    history = State()
+
+
+class ReferralsSG(StatesGroup):
+    main = State()
+
+
+class AdminSG(StatesGroup):
+    main = State()
+    export_users = State()
+    user_lookup = State()
+    user_tasks = State()
+    import_tasks = State()
+
+
+class TasksSG(StatesGroup):
+    empty = State()  # нет задания
+    assigned = State()  # есть задание
+    submitted_info = State()
+    checking = State()
+    report_account = State()
+    report_photo = State()
