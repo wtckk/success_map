@@ -72,6 +72,7 @@ class User(Base):
     )
 
     approved_by_admin_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         nullable=True,
     )
 
