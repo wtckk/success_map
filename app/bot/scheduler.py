@@ -10,8 +10,13 @@ EKB_TZ = timezone(timedelta(hours=5))
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
-    scheduler = AsyncIOScheduler(timezone=EKB_TZ)
-
+    scheduler = AsyncIOScheduler(
+        timezone=EKB_TZ,
+        job_defaults={
+            "misfire_grace_time": 600,
+            "coalesce": True,
+        },
+    )
     scheduler.add_job(
         send_daily_tasks_report,
         trigger=CronTrigger(hour=0, minute=0),

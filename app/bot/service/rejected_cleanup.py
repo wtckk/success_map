@@ -6,6 +6,8 @@ logger = logging.getLogger(__name__)
 
 
 async def run_rejected_archive() -> None:
+    logger.info("start run_rejected_archive()")
+
     count = await archive_rejected_assignments()
     if count:
         logger.info("Rejected assignments archived: %s", count)

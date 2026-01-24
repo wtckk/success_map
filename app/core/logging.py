@@ -7,3 +7,5 @@ def setup_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
+
+    logging.getLogger("apscheduler").setLevel(logging.INFO)

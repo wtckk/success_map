@@ -67,7 +67,7 @@ async def main() -> None:
     dp.include_router(admin_dialog)
 
     dp.include_router(user_approval_router)
-    setup_scheduler(bot)
+    scheduler = setup_scheduler(bot)
     setup_dialogs(dp)
 
     await dp.start_polling(bot)

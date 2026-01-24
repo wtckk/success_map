@@ -9,6 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 async def send_daily_tasks_report(bot: Bot) -> None:
+    logger.info("start send_daily_tasks_report")
+
     buffer = await export_daily_tasks_excel()
     data = buffer.read()
 
