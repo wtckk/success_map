@@ -71,6 +71,13 @@ async def assign_random_task(
             select(TaskAssignment.task_id).where(
                 TaskAssignment.user_id == user.id,
                 TaskAssignment.is_archived.is_(False),
+                TaskAssignment.status.in_(
+                    [
+                        TaskAssignmentStatus.ASSIGNED,
+                        TaskAssignmentStatus.SUBMITTED,
+                        TaskAssignmentStatus.APPROVED,
+                    ]
+                ),
             )
         ),
     )
