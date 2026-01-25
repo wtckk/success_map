@@ -116,11 +116,26 @@ async def get_task(
     dialog_manager: DialogManager,
 ):
     user = await get_user_by_tg_id(callback.from_user.id)
-    assignment = await assign_random_task(user)
 
-    if not assignment:
+    result = await assign_random_task(user)
+
+    if result == "already_has":
         await callback.answer(
             "⏳ У вас уже есть задание (выполняется или на проверке).",
+            show_alert=True,
+        )
+        return
+
+    if result == "no_tasks":
+        await callback.answer(
+            "📭 Сейчас нет доступных заданий. Попробуйте позже.",
+            show_alert=True,
+        )
+        return
+
+    if result == "blocked":
+        await callback.answer(
+            "⛔ Ваш аккаунт заблокирован.",
             show_alert=True,
         )
         return

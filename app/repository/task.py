@@ -52,39 +52,47 @@ async def assign_random_task(
     user: User,
     *,
     session,
-) -> TaskAssignment | None:
+) -> TaskAssignment | None | str:
+    logger.info(
+        "Попытка выдачи задания пользователю tg_id=%s user_id=%s",
+        user.tg_id,
+        user.id,
+    )
+
     if user.is_blocked:
-        logger.info(
-            "Попытка выдачи задания заблокированному пользователю tg_id=%s",
+        logger.warning(
+            "Пользователь заблокирован, задание не выдано tg_id=%s",
             user.tg_id,
         )
-        return None
+        return "blocked"
 
     active = await get_active_assignment(user.id)
     if active:
-        return None
+        logger.info(
+            "У пользователя уже есть активное задание assignment_id=%s tg_id=%s",
+            active.id,
+            user.tg_id,
+        )
+        return "already_has"
 
     # подходящие задания
     stmt = select(Task).where(
         or_(Task.city_id.is_(None), Task.city_id == user.city_id),
         ~Task.id.in_(
             select(TaskAssignment.task_id).where(
-                TaskAssignment.user_id == user.id,
                 TaskAssignment.is_archived.is_(False),
-                TaskAssignment.status.in_(
-                    [
-                        TaskAssignmentStatus.ASSIGNED,
-                        TaskAssignmentStatus.SUBMITTED,
-                        TaskAssignmentStatus.APPROVED,
-                    ]
-                ),
             )
-        ),
+        )
     )
 
     tasks = (await session.execute(stmt)).scalars().all()
     if not tasks:
-        return None
+        logger.info(
+            "Нет доступных заданий для пользователя tg_id=%s city_id=%s",
+            user.tg_id,
+            user.city_id,
+        )
+        return "no_tasks"
 
     task = random.choice(tasks)
 
@@ -95,6 +103,14 @@ async def assign_random_task(
     )
     session.add(assignment)
     await session.commit()
+
+    logger.info(
+        "Задание выдано assignment_id=%s task_id=%s tg_id=%s",
+        assignment.id,
+        task.id,
+        user.tg_id,
+    )
+
     return assignment
 
 
