@@ -1,10 +1,11 @@
 import random
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from app.db.session import connection
 from app.models import TaskReport
@@ -18,7 +19,6 @@ from sqlalchemy.orm import selectinload
 
 from app.models.task import Task
 from app.models.user import User
-from app.repository.admin import EKB_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +67,6 @@ async def assign_random_task(
     # подходящие задания
     stmt = select(Task).where(
         or_(Task.city_id.is_(None), Task.city_id == user.city_id),
-        or_(
-            Task.required_gender.is_(None),
-            Task.required_gender == user.gender,
-        ),
         ~Task.id.in_(
             select(TaskAssignment.task_id).where(
                 TaskAssignment.user_id == user.id,
@@ -182,6 +178,7 @@ async def submit_report(
             "text": task.text,
             "example_text": task.example_text,
             "link": task.link,
+            "required_gender": task.required_gender,
         },
         "city": (
             {
@@ -295,8 +292,10 @@ async def save_assignment_report_message_id(
         await session.commit()
 
 
+MSC_TZ = timezone(timedelta(hours=3))
+
 def _ekb_day_start() -> datetime:
-    now = datetime.now(EKB_TZ)
+    now = datetime.now(MSC_TZ)
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 

@@ -23,7 +23,7 @@ from app.repository.admin import (
 )
 from app.repository.admin_report import import_tasks_from_excel
 
-EKB_TZ = timezone(timedelta(hours=5))
+MSC_TZ = timezone(timedelta(hours=3))
 
 PAGE_SIZE = 5
 
@@ -198,7 +198,7 @@ async def export_users(c: CallbackQuery, w: Button, m: DialogManager):
 
 
 async def export_tasks_today(c: CallbackQuery, w, m: DialogManager):
-    now = datetime.now(EKB_TZ)
+    now = datetime.now(MSC_TZ)
     date_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
     buffer = await export_users_tasks_to_excel(date_from=date_from)
     await c.bot.send_document(
@@ -210,7 +210,7 @@ async def export_tasks_today(c: CallbackQuery, w, m: DialogManager):
 
 
 async def export_tasks_week(c: CallbackQuery, w, m: DialogManager):
-    now = datetime.now(EKB_TZ)
+    now = datetime.now(MSC_TZ)
     date_from = (now - timedelta(days=now.weekday())).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -348,12 +348,12 @@ async def user_tasks_getter(dialog_manager: DialogManager, **kwargs):
 
         for i, it in enumerate(items, start=start_num):
             submitted = (
-                it.submitted_at.astimezone(EKB_TZ).strftime("%Y-%m-%d %H:%M")
+                it.submitted_at.astimezone(MSC_TZ).strftime("%Y-%m-%d %H:%M")
                 if it.submitted_at
                 else "—"
             )
             processed = (
-                it.processed_at.astimezone(EKB_TZ).strftime("%Y-%m-%d %H:%M")
+                it.processed_at.astimezone(MSC_TZ).strftime("%Y-%m-%d %H:%M")
                 if it.processed_at
                 else "—"
             )

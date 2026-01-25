@@ -31,7 +31,7 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
-EKB_TZ = timezone(timedelta(hours=5))
+MSC_TZ = timezone(timedelta(hours=3))
 
 PeriodKey = Literal["day", "week", "all"]
 
@@ -98,7 +98,7 @@ def _dt_to_ekb_str(dt: datetime | None) -> str:
         return "—"
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(EKB_TZ).strftime("%Y-%m-%d %H:%M")
+    return dt.astimezone(MSC_TZ).strftime("%Y-%m-%d %H:%M")
 
 
 def gender_ru(value: str | None) -> str:
@@ -135,7 +135,6 @@ async def export_users_tasks_to_excel(
     - Включён autofilter
     """
 
-    # 1️⃣ Все assignments
     stmt = (
         select(TaskAssignment)
         .options(
@@ -219,8 +218,8 @@ async def export_users_tasks_to_excel(
         ColSpec("task_req_city", "Требуемый город", 22),
         ColSpec("task_link", "Ссылка на задание", 36),
         ColSpec("task_example", "Пример", 50),
-        ColSpec("submitted_at", "Отправлено (+2 МСК)", 22),
-        ColSpec("processed_at", "Проверено (+2 МСК)", 22),
+        ColSpec("submitted_at", "Отправлено (МСК)", 22),
+        ColSpec("processed_at", "Проверено (МСК)", 22),
         ColSpec(
             "processed_by",
             "Принято администратором (ФИО @username tg_id)",
@@ -372,12 +371,12 @@ async def get_user_by_tg_id(*, session, tg_id: int) -> User | None:
 
 def _period_to_range(period: PeriodKey) -> tuple[datetime | None, datetime | None]:
     """
-    Возвращает (date_from, date_to) в часовом поясе EKB_TZ.
+    Возвращает (date_from, date_to) в часовом поясе MSC_TZ.
     - day: с начала текущего дня
     - week: с начала текущей недели (понедельник 00:00)
     - all: без ограничений
     """
-    now = datetime.now(EKB_TZ)
+    now = datetime.now(MSC_TZ)
 
     if period == "day":
         date_from = now.replace(hour=0, minute=0, second=0, microsecond=0)

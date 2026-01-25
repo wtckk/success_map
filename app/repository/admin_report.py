@@ -97,7 +97,7 @@ async def import_tasks_from_excel(
         tasks_to_create.append(
             Task(
                 id=uuid.uuid4(),
-                text="Оставить отзыв",
+                text="Оставить отзыв на Яндекс Картах",
                 example_text=str(text_example).strip(),
                 link=str(link).strip(),
                 required_gender=gender,

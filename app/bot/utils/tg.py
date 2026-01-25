@@ -80,7 +80,13 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
     username_str = f"@{username}" if username else "без username"
 
     city_name = payload["city"]["name"] if payload.get("city") else "—"
+    persona_map = {
+        "M": "👨 Мужского",
+        "F": "👩 Женского",
+        None: "🧑 Не важно",
+    }
 
+    persona_text = persona_map.get(payload["task"].get("required_gender"), "🧑 Не указано")
     text = (
         "📤 <b>Новый отчёт</b>\n\n"
         f"👤 Пользователь: {payload['user']['full_name'] or '—'} ({username_str})\n"
@@ -88,10 +94,11 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
         f"📦 <b>ТЗ задания</b>:\n"
         f"{payload['task']['text']}\n\n"
         + (
-            f"✍️ <b>Пример:</b>\n{payload['task']['example_text']}\n\n"
+            f"✍️ <b>Текст задания:</b>\n{payload['task']['example_text']}\n\n"
             if payload["task"]["example_text"]
             else ""
         )
+        + f"🗣 <b>От какого лица нужно было оставить отзыв:</b> {persona_text}\n\n"
         + f"🔗 <b>Ссылка:</b> {payload['task']['link']}\n"
         f"👤 Аккаунт: <code>{payload['report']['account_name']}</code>\n"
         f"🏙 Город: {city_name}"

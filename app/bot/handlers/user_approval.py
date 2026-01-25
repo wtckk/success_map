@@ -15,7 +15,7 @@ from app.repository.user import (
     get_user_by_id,
 )
 
-from app.repository.admin import EKB_TZ
+from app.repository.admin import MSC_TZ
 
 logger = logging.getLogger(__name__)
 router = Router()

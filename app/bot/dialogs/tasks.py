@@ -45,11 +45,26 @@ async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
     task = assignment.task
 
     example_block = (
-        f"\n\n✍️ <b>Пример:</b>\n{task.example_text}" if task.example_text else ""
+        f"\n\n✍️ <b>Текст задания:</b>\n{task.example_text}" if task.example_text else ""
     )
 
-    base_text = f"{task.text}{example_block}\n\n🔗 <b>Ссылка:</b>\n{task.link}"
+    persona_map = {
+        "M": "👨 Мужское",
+        "F": "👩 Женское",
+        None: "🧑 Не важно",
+    }
 
+    persona_block = (
+        f"\n\n<b>От какого лица писать отзыв:</b>"
+        f"{persona_map.get(task.required_gender, 'Не указано')}"
+    )
+
+    base_text = (
+        f"{task.text}"
+        f"{example_block}"
+        f"{persona_block}"
+        f"\n\n🔗 <b>Ссылка:</b>\n{task.link}"
+    )
     if assignment.status == "ASSIGNED":
         return {
             "state": "assigned",

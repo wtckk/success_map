@@ -6,12 +6,12 @@ from aiogram import Bot
 from app.bot.service.daily_report import send_daily_tasks_report
 from app.bot.service.rejected_cleanup import run_rejected_archive
 
-EKB_TZ = timezone(timedelta(hours=5))
+MSC_TZ = timezone(timedelta(hours=3))
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(
-        timezone=EKB_TZ,
+        timezone=MSC_TZ,
         job_defaults={
             "misfire_grace_time": 600,
             "coalesce": True,
@@ -19,14 +19,14 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     )
     scheduler.add_job(
         send_daily_tasks_report,
-        trigger=CronTrigger(hour=0, minute=0),
+        trigger=CronTrigger(hour=0, minute=0, timezone=MSC_TZ,),
         args=[bot],
         id="daily_tasks_report",
         replace_existing=True,
     )
     scheduler.add_job(
         run_rejected_archive,
-        trigger=CronTrigger(hour=0, minute=5),
+        trigger=CronTrigger(hour=0, minute=5, timezone=MSC_TZ,),
         id="archive_rejected_assignments",
         replace_existing=True,
     )
