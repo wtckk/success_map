@@ -4,7 +4,7 @@ import uuid
 from aiogram import Router, Bot
 from aiogram.enums import ParseMode
 from aiogram.types import CallbackQuery
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from app.bot.utils.tg import notify_user_about_approval
 from app.repository.user import (
@@ -15,7 +15,7 @@ from app.repository.user import (
     get_user_by_id,
 )
 
-from app.repository.admin import MSC_TZ
+MSC_TZ = timezone(timedelta(hours=3))
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -36,7 +36,7 @@ async def update_user_approval_messages(
         if approved
         else "❌ <b>Пользователь отклонён</b>"
     )
-    time_str = datetime.now(EKB_TZ).strftime("%Y-%m-%d %H:%M")
+    time_str = datetime.now(MSC_TZ).strftime("%Y-%m-%d %H:%M")
 
     referrer_text = "—"
     if user.referrer:
