@@ -6,6 +6,8 @@ from aiogram.enums import ParseMode
 from aiogram.types import CallbackQuery
 from datetime import datetime, timezone, timedelta
 
+from aiogram_dialog import DialogManager
+
 from app.bot.utils.tg import notify_user_about_approval
 from app.repository.user import (
     approve_user,
@@ -28,8 +30,21 @@ async def update_user_approval_messages(
     approved: bool,
     admin_tg_id: int,
 ):
+    logger.info(
+        "update_user_approval_messages: user_id=%s approved=%s admin_tg_id=%s",
+        user_id, approved, admin_tg_id,
+    )
     messages = await get_approval_messages_by_user(user_id=user_id)
+    logger.info(
+        "update_user_approval_messages: found %s admin-messages to edit",
+        len(messages),
+    )
+
     user = await get_user_by_id(user_id=user_id)
+
+    if not user:
+        logger.warning("update_user_approval_messages: user not found user_id=%s", user_id)
+        return
 
     status = (
         "✅ <b>Пользователь одобрен</b>"
@@ -66,11 +81,19 @@ async def update_user_approval_messages(
                 parse_mode=ParseMode.HTML,
                 reply_markup=None,
             )
+            logger.info(
+                "update_user_approval_messages: edited message admin_tg_id=%s message_id=%s",
+                msg.admin_tg_id, msg.message_id,
+            )
         except Exception:
-            pass
+            logger.exception(
+                "update_user_approval_messages: failed edit admin_tg_id=%s message_id=%s",
+                msg.admin_tg_id, msg.message_id,
+            )
 
 
-@router.callback_query(lambda c: c.data.startswith("user_approve:"))
+
+@router.callback_query(lambda c: c.data.startswith("user_approve:"), flags={"aiogram_dialog": False})
 async def approve_user_cb(c: CallbackQuery, bot: Bot):
     user_id = uuid.UUID(c.data.split(":", 1)[1])
     tg_id = await get_user_tg_id(user_id=user_id)
@@ -83,6 +106,7 @@ async def approve_user_cb(c: CallbackQuery, bot: Bot):
         tg_id=tg_id,
         admin_tg_id=admin_id,
     )
+    logger.info("approve_user_cb: approve_user returned ok=%s (tg_id=%s)", ok, tg_id)
 
     if not ok:
         await c.answer("⚠️ Уже обработано", show_alert=True)
@@ -105,7 +129,7 @@ async def approve_user_cb(c: CallbackQuery, bot: Bot):
     await c.answer("✅ Пользователь одобрен")
 
 
-@router.callback_query(lambda c: c.data.startswith("user_reject:"))
+@router.callback_query(lambda c: c.data.startswith("user_reject:"), flags={"aiogram_dialog": False})
 async def reject_user_cb(c: CallbackQuery, bot: Bot):
     user_id = uuid.UUID(c.data.split(":", 1)[1])
     tg_id = await get_user_tg_id(user_id=user_id)
