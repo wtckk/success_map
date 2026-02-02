@@ -1,21 +1,37 @@
 from aiogram import BaseMiddleware
+from aiogram.types import CallbackQuery
 
+from app.core.settings import settings
 from app.repository.user import get_user_by_tg_id
 from app.models.user import UserApprovalStatus
 
+logger = logging.getLogger(__name__)
 
 class ApprovalMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         tg_id = None
 
-        if event.message and event.message.from_user:
-            tg_id = event.message.from_user.id
-        elif event.callback_query and event.callback_query.from_user:
-            tg_id = event.callback_query.from_user.id
+        from aiogram.types import Message
+        if isinstance(event, Message) and event.from_user:
+            tg_id = event.from_user.id
+        elif isinstance(event, CallbackQuery) and event.from_user:
+            tg_id = event.from_user.id
 
         if not tg_id:
             return await handler(event, data)
 
+        if tg_id in settings.admin_id_list:
+            return await handler(event, data)
+
+        if isinstance(event, CallbackQuery):
+            cb_data = event.data or ""
+            if cb_data.startswith("user_approve:") or cb_data.startswith("user_reject:"):
+                logger.info(
+                    "ApprovalMiddleware: bypass approval callback %s from tg_id=%s",
+                    cb_data,
+                    tg_id,
+                )
+                return await handler(event, data)
         if (
             event.message
             and event.message.text
@@ -39,6 +55,10 @@ class ApprovalMiddleware(BaseMiddleware):
                 await event.callback_query.answer(text, show_alert=True)
             else:
                 await event.message.answer(text)
+                logger.info(
+                    "ApprovalMiddleware blocked tg_id=%s (PENDING)",
+                    tg_id,
+                )
             return
 
         if user.approval_status == UserApprovalStatus.REJECTED:
@@ -50,6 +70,10 @@ class ApprovalMiddleware(BaseMiddleware):
                 await event.callback_query.answer(text, show_alert=True)
             else:
                 await event.message.answer(text)
+                logger.info(
+                    "ApprovalMiddleware blocked tg_id=%s (REJECTED)",
+                    tg_id,
+                )
             return
 
         return await handler(event, data)
