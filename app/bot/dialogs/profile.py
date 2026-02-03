@@ -18,11 +18,10 @@ logger = logging.getLogger(__name__)
 
 TASKS_PER_PAGE = 5
 
+
 async def profile_getter(dialog_manager: DialogManager, **_):
     tg_id = dialog_manager.event.from_user.id
     return await get_profile_data(tg_id)
-
-
 
 
 async def history_getter(dialog_manager: DialogManager, **_):
@@ -115,7 +114,6 @@ profile_dialog = Dialog(
         getter=profile_getter,
         state=ProfileSG.main,
     ),
-
     Window(
         Format("{history_text}"),
         Row(

@@ -60,10 +60,7 @@ async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
     )
 
     base_text = (
-        f"{task.text}"
-        f"{example_block}"
-        f"{persona_block}"
-        f"\n\n🔗 <b>Ссылка:</b>\n{task.link}"
+        f"{task.text}{example_block}{persona_block}\n\n🔗 <b>Ссылка:</b>\n{task.link}"
     )
     if assignment.status == "ASSIGNED":
         return {
@@ -91,7 +88,6 @@ async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
     }
 
 
-
 async def resolve_tasks_state(dialog_manager: DialogManager):
     data = await tasks_getter(dialog_manager)
     state = data["state"]
@@ -102,7 +98,6 @@ async def resolve_tasks_state(dialog_manager: DialogManager):
         await dialog_manager.switch_to(TasksSG.checking)
     else:
         await dialog_manager.switch_to(TasksSG.empty)
-
 
 
 async def on_start(start_data, dialog_manager: DialogManager):

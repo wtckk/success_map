@@ -82,7 +82,7 @@ async def assign_random_task(
             select(TaskAssignment.task_id).where(
                 TaskAssignment.is_archived.is_(False),
             )
-        )
+        ),
     )
 
     tasks = (await session.execute(stmt)).scalars().all()
@@ -316,6 +316,7 @@ async def save_assignment_report_message_id(
 
 
 MSC_TZ = timezone(timedelta(hours=3))
+
 
 def _ekb_day_start() -> datetime:
     now = datetime.now(MSC_TZ)

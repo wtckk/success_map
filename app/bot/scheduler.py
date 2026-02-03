@@ -19,14 +19,22 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     )
     scheduler.add_job(
         send_daily_tasks_report,
-        trigger=CronTrigger(hour=0, minute=0, timezone=MSC_TZ,),
+        trigger=CronTrigger(
+            hour=0,
+            minute=0,
+            timezone=MSC_TZ,
+        ),
         args=[bot],
         id="daily_tasks_report",
         replace_existing=True,
     )
     scheduler.add_job(
         run_rejected_archive,
-        trigger=CronTrigger(hour=0, minute=5, timezone=MSC_TZ,),
+        trigger=CronTrigger(
+            hour=0,
+            minute=5,
+            timezone=MSC_TZ,
+        ),
         id="archive_rejected_assignments",
         replace_existing=True,
     )

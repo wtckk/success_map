@@ -86,7 +86,9 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
         None: "🧑 Не важно",
     }
 
-    persona_text = persona_map.get(payload["task"].get("required_gender"), "🧑 Не указано")
+    persona_text = persona_map.get(
+        payload["task"].get("required_gender"), "🧑 Не указано"
+    )
     text = (
         "📤 <b>Новый отчёт</b>\n\n"
         f"👤 Пользователь: {payload['user']['full_name'] or '—'} ({username_str})\n"
@@ -183,6 +185,7 @@ async def notify_user_about_approval(
     approved: bool,
     comment: str | None = None,
 ):
+    reply_markup_menu = None
     if tg_id in settings.admin_id_list:
         return
     if approved:

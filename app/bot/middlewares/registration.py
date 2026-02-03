@@ -6,6 +6,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from aiogram_dialog import DialogManager
 
+from app.core.settings import settings
 from app.repository.user import get_user_by_tg_id
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ class RegistrationMiddleware(BaseMiddleware):
         else:
             return await handler(event, data)
 
+        if tg_id in settings.admin_id_list:
+            return await handler(event, data)
         if (
             isinstance(event, Message)
             and event.text

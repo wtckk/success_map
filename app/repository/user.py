@@ -166,11 +166,7 @@ async def update_user_profile(
     if not is_admin:
         values["approval_status"] = UserApprovalStatus.PENDING
 
-    await session.execute(
-        update(User)
-        .where(User.id == user_id)
-        .values(**values)
-    )
+    await session.execute(update(User).where(User.id == user_id).values(**values))
 
     logger.info(
         "Профиль пользователя %s обновлён (admin=%s)",

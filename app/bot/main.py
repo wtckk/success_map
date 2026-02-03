@@ -53,9 +53,10 @@ async def main() -> None:
 
     dp.update.middleware(ApprovalMiddleware())
 
+
     dp.include_router(start_router)
     dp.include_router(admin_router)
-
+    dp.include_router(user_approval_router)
     dp.include_router(registration_dialog)
     dp.include_router(main_menu_dialog)
     dp.include_router(profile_dialog)
@@ -66,7 +67,6 @@ async def main() -> None:
     dp.include_router(referrals_dialog)
     dp.include_router(admin_dialog)
 
-    dp.include_router(user_approval_router)
     scheduler = setup_scheduler(bot)
     setup_dialogs(dp)
 

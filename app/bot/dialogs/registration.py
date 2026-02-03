@@ -81,7 +81,6 @@ async def on_full_name(
     dialog_manager.dialog_data["full_name"] = full_name
     logger.info("Регистрация: ФИО получено")
 
-
     await message.answer(
         "📞 Нажмите кнопку ниже, чтобы отправить номер телефона:",
         reply_markup=phone_keyboard(),

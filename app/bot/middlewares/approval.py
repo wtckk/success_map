@@ -8,11 +8,13 @@ from app.models.user import UserApprovalStatus
 
 logger = logging.getLogger(__name__)
 
+
 class ApprovalMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         tg_id = None
 
         from aiogram.types import Message
+
         if isinstance(event, Message) and event.from_user:
             tg_id = event.from_user.id
         elif isinstance(event, CallbackQuery) and event.from_user:
@@ -26,7 +28,9 @@ class ApprovalMiddleware(BaseMiddleware):
 
         if isinstance(event, CallbackQuery):
             cb_data = event.data or ""
-            if cb_data.startswith("user_approve:") or cb_data.startswith("user_reject:"):
+            if cb_data.startswith("user_approve:") or cb_data.startswith(
+                "user_reject:"
+            ):
                 logger.info(
                     "ApprovalMiddleware: bypass approval callback %s from tg_id=%s",
                     cb_data,

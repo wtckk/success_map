@@ -25,7 +25,9 @@ def upgrade() -> None:
     op.execute('CREATE EXTENSION IF NOT EXISTS "pgcrypto";')
     op.create_table(
         "cities",
-        sa.Column("id", sa.UUID(), nullable=False, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id", sa.UUID(), nullable=False, server_default=sa.text("gen_random_uuid()")
+        ),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
