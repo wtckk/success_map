@@ -25,6 +25,5 @@ class TaskReport(Base):
     photo_file_id: Mapped[str] = mapped_column(String(256))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),
-        default=uuid.uuid4,
+        server_default=func.now()
     )
