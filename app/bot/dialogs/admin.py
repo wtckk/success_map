@@ -1,4 +1,5 @@
 import io
+import statistics
 from datetime import timedelta, timezone, datetime
 from math import ceil
 from pathlib import Path
@@ -517,26 +518,41 @@ async def export_user_stats_excel(c: CallbackQuery, w: Button, m: DialogManager)
     )
     await c.answer("Готово")
 
-
-async def analytics_dynamics_getter(dialog_manager: DialogManager, **kwargs):
+async def analytics_dynamics_getter(dialog_manager, **kwargs):
     data = await get_daily_completed_stats()
 
     if not data:
         return {"dynamics_text": "📊 Нет данных"}
 
-    max_value = max(count for _, count in data) or 1
     width = 10
 
-    max_digits = max(len(str(count)) for _, count in data)
+    counts = [count for _, count in data]
+    max_value = max(counts) or 1
+    avg_value = statistics.mean(counts)
+
+    scale = max_value if max_value <= avg_value * 2 else avg_value * 2
+    if scale == 0:
+        scale = 1
+
+    max_digits = max(len(str(c)) for c in counts)
+
+    max_day_len = max(len(str(day)) for day, _ in data)
 
     lines = ["📊 <b>Динамика выполненных заданий</b>\n"]
 
     prev = None
 
     for day, count in data:
-        bar_len = int((count / max_value) * width)
+
+        ratio = min(count / scale, 1)
+        bar_len = round(ratio * width)
+
+        if count > 0 and bar_len == 0:
+            bar_len = 1
+
         bar = "▰" * bar_len + "▱" * (width - bar_len)
 
+        # Тренд
         if prev is None:
             trend = "➖"
         elif count > prev:
@@ -548,9 +564,12 @@ async def analytics_dynamics_getter(dialog_manager: DialogManager, **kwargs):
 
         prev = count
 
+        day_str = f"{day:>{max_day_len}}"
         count_str = f"{count:>{max_digits}}"
 
-        lines.append(f"{day:>5}  {bar}  <b>{count_str}</b>  {trend}")
+        lines.append(
+            f"{day_str}  {bar}  <b>{count_str}</b>  {trend}"
+        )
 
     return {"dynamics_text": "\n".join(lines)}
 
