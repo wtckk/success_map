@@ -1,11 +1,15 @@
-from aiogram import Router, Bot
+from datetime import datetime, timezone, timedelta
+
+from aiogram import Router, Bot, Dispatcher
 from aiogram.types import CallbackQuery
 from aiogram.enums import ParseMode
 
 import logging
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.bot.callbacks.admin import AdminReviewCB
+from app.bot.service.rejected_cleanup import archive_rejected_later
 
 from app.bot.utils.tg import notify_user_about_review
 from app.repository.task import review_assignment
@@ -19,11 +23,15 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+MSC_TZ = timezone(timedelta(hours=3))
+
+
 @router.callback_query(AdminReviewCB.filter())
 async def admin_review_handler(
     callback: CallbackQuery,
     callback_data: AdminReviewCB,
     bot: Bot,
+    dispatcher: Dispatcher,
 ):
     approve = callback_data.action == "approve"
 
@@ -32,6 +40,17 @@ async def admin_review_handler(
         admin_tg_id=callback.from_user.id,
         approve=approve,
     )
+    if not approve:
+        scheduler: AsyncIOScheduler = dispatcher.workflow_data["scheduler"]
+
+        scheduler.add_job(
+            archive_rejected_later,
+            trigger="date",
+            run_date=datetime.now(tz=MSC_TZ) + timedelta(minutes=1),
+            args=[assignment.id],
+            id=f"archive_rejected_{assignment.id}",
+            replace_existing=True,
+        )
 
     if not assignment:
         await callback.answer("⚠️ Задание не найдено", show_alert=True)

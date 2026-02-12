@@ -257,25 +257,33 @@ async def get_referrals_with_stats(
 
     ta = aliased(TaskAssignment)
 
+    approved_subq = (
+        select(
+            ta.user_id,
+            func.count(ta.id).label("approved_count"),
+        )
+        .where(
+            ta.status == TaskAssignmentStatus.APPROVED,
+            ta.is_archived.is_(False),
+        )
+        .group_by(ta.user_id)
+        .subquery()
+    )
+
     stmt = (
         select(
             User,
-            func.count(ta.id).label("approved_count"),
+            func.coalesce(approved_subq.c.approved_count, 0),
         )
         .outerjoin(
-            ta,
-            (ta.user_id == User.id)
-            & (ta.status == TaskAssignmentStatus.APPROVED)
-            & (ta.is_archived == False),
+            approved_subq,
+            approved_subq.c.user_id == User.id,
         )
         .where(
             User.referrer_id == referrer_id,
             User.approval_status == UserApprovalStatus.APPROVED,
         )
-        .options(
-            selectinload(User.city),
-        )
-        .group_by(User.id)
+        .options(selectinload(User.city))
         .order_by(User.approval_at)
     )
 

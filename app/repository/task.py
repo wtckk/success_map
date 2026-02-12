@@ -3,7 +3,8 @@ import uuid
 import logging
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func, exists
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -48,10 +49,45 @@ async def get_active_assignment(
 
 
 @connection()
+async def has_available_tasks_for_source(
+    user,
+    *,
+    session,
+    source: str,
+) -> bool:
+    """
+    Проверяем, есть ли хоть одно доступное задание по source
+    (НЕ создаём assignment, пол не учитываем).
+    Учитываем:
+      - город (Task.city_id is None или совпадает с user.city_id)
+      - не занятость (нет активного неархивного TaskAssignment)
+      - source совпадает
+    """
+    stmt = (
+        select(Task.id)
+        .where(
+            Task.source == source,
+            or_(Task.city_id.is_(None), Task.city_id == user.city_id),
+            ~Task.id.in_(
+                select(TaskAssignment.task_id).where(
+                    TaskAssignment.is_archived.is_(False),
+                )
+            ),
+        )
+        .limit(1)
+    )
+
+    task_id = (await session.execute(stmt)).scalar_one_or_none()
+    return task_id is not None
+
+
+@connection()
 async def assign_random_task(
     user: User,
     *,
     session,
+    source: str | None,
+    required_gender: str | None,
 ) -> TaskAssignment | None | str:
     logger.info(
         "Попытка выдачи задания пользователю tg_id=%s user_id=%s",
@@ -78,9 +114,16 @@ async def assign_random_task(
     # подходящие задания
     stmt = select(Task).where(
         or_(Task.city_id.is_(None), Task.city_id == user.city_id),
+        or_(Task.required_gender.is_(None), Task.required_gender == required_gender),
+        Task.source == source,
         ~Task.id.in_(
             select(TaskAssignment.task_id).where(
                 TaskAssignment.is_archived.is_(False),
+            )
+        ),
+        ~Task.id.in_(
+            select(TaskAssignment.task_id).where(
+                TaskAssignment.user_id == user.id,
             )
         ),
     )
@@ -102,7 +145,16 @@ async def assign_random_task(
         status=TaskAssignmentStatus.ASSIGNED,
     )
     session.add(assignment)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+
+        logger.warning(
+            "Race condition: задание task_id=%s уже было выдано другому пользователю",
+            task.id,
+        )
+        return "no_tasks"
 
     logger.info(
         "Задание выдано assignment_id=%s task_id=%s tg_id=%s",
@@ -347,3 +399,111 @@ async def archive_rejected_assignments(*, session) -> int:
     count = result.rowcount or 0
     logger.info("Archived rejected assignments: %s", count)
     return count
+
+
+@connection()
+async def archive_assignment_by_id(*, assignment_id: int, session) -> bool:
+    stmt = (
+        update(TaskAssignment)
+        .where(
+            TaskAssignment.status == TaskAssignmentStatus.REJECTED,
+            TaskAssignment.id == assignment_id,
+            TaskAssignment.is_archived.is_(False),
+        )
+        .values(is_archived=True)
+        .returning(TaskAssignment.id)
+    )
+
+    result = await session.execute(stmt)
+    await session.commit()
+
+    return result.scalar() is not None
+
+
+@connection()
+async def get_avg_execution_time(*, session: AsyncSession) -> float:
+    """
+    Возвращает среднее время выполнения задания (в минутах).
+    Считаем только APPROVED и REJECTED, у которых есть submitted_at.
+    """
+
+    stmt = select(
+        func.avg(
+            func.extract(
+                "epoch", TaskAssignment.submitted_at - TaskAssignment.created_at
+            )
+        )
+    ).where(
+        TaskAssignment.status.in_(
+            [
+                TaskAssignmentStatus.APPROVED,
+                TaskAssignmentStatus.REJECTED,
+            ]
+        ),
+        TaskAssignment.submitted_at.is_not(None),
+    )
+
+    avg_seconds = await session.scalar(stmt)
+
+    if not avg_seconds:
+        return 0.0
+
+    return avg_seconds / 60
+
+
+@connection()
+async def get_tasks_statistics(*, session: AsyncSession) -> dict:
+    total_tasks = await session.scalar(select(func.count(Task.id)))
+
+    total_assignments = await session.scalar(select(func.count(TaskAssignment.id)))
+
+    avg_execution_minutes = await get_avg_execution_time()
+
+    approved = await session.scalar(
+        select(func.count(TaskAssignment.id)).where(
+            TaskAssignment.status == TaskAssignmentStatus.APPROVED
+        )
+    )
+
+    in_progress = await session.scalar(
+        select(func.count(TaskAssignment.id)).where(
+            TaskAssignment.status.in_(
+                [
+                    TaskAssignmentStatus.ASSIGNED,
+                    TaskAssignmentStatus.SUBMITTED,
+                ]
+            )
+        )
+    )
+
+    rejected = await session.scalar(
+        select(func.count(TaskAssignment.id)).where(
+            TaskAssignment.status == TaskAssignmentStatus.REJECTED
+        )
+    )
+
+    free_tasks = await session.scalar(
+        select(func.count(Task.id)).where(
+            ~exists().where(
+                TaskAssignment.task_id == Task.id,
+                TaskAssignment.is_archived.is_(False),
+            )
+        )
+    )
+
+    approved_users = await session.scalar(
+        select(func.count(func.distinct(TaskAssignment.user_id))).where(
+            TaskAssignment.status == TaskAssignmentStatus.APPROVED
+        )
+    )
+
+    return {
+        "total_tasks": total_tasks or 0,
+        "total_assignments": total_assignments or 0,
+        "approved": approved or 0,
+        "in_progress": in_progress or 0,
+        "rejected": rejected or 0,
+        "free_tasks": free_tasks or 0,
+        "approved_users": approved_users or 0,
+        "avg_execution_minutes": round(avg_execution_minutes, 2),
+    }

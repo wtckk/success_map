@@ -41,10 +41,10 @@ async def notify_admins_user_registered(
             f"{user.referrer.full_name or 'Без имени'} "
             f"(@{user.referrer.username or user.referrer.tg_id})"
         )
-
+    username = f"@{user.username or user.tg_id}"
     text = (
         "🕓 <b>Пользователь ожидает проверки</b>\n\n"
-        f"👤 ФИО: {user.full_name}\n"
+        f"👤 ФИО: {user.full_name} ({username})\n"
         f"📞 Телефон: {user.phone}\n"
         f"🏙 Город: {user.city.name if user.city else '—'}\n"
         f"⚧ Пол: {'Мужской' if user.gender == 'M' else 'Женский'}\n"

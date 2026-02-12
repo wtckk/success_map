@@ -1,5 +1,7 @@
 import uuid
-from sqlalchemy import String, Text, ForeignKey
+from datetime import datetime, UTC
+
+from sqlalchemy import String, Text, ForeignKey, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -28,6 +30,15 @@ class Task(Base):
     comment: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(32),
+        nullable=True,  # "2ГИС"/"Яндекс Карты"/"Google maps"
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.now(UTC), server_default=func.now()
     )
 
     link: Mapped[str] = mapped_column(

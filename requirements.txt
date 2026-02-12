@@ -1,7 +1,7 @@
 alembic
 pydantic
 pydantic-settings
-aiogram
+aiogram==3.25.0
 aiogram-dialog
 sqlalchemy
 asyncpg

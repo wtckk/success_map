@@ -42,6 +42,14 @@ class AdminSG(StatesGroup):
     user_lookup = State()
     user_tasks = State()
     import_tasks = State()
+    global_stats = State()
+    reports = State()
+    analytics = State()
+    users = State()
+    manage = State()
+    analytics_overview = State()
+    analytics_dynamics = State()
+    analytics_top = State()
 
 
 class TasksSG(StatesGroup):
@@ -49,5 +57,9 @@ class TasksSG(StatesGroup):
     assigned = State()  # есть задание
     submitted_info = State()
     checking = State()
+
+    choose_source = State()
+    choose_gender = State()
+
     report_account = State()
     report_photo = State()

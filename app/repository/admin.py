@@ -10,6 +10,7 @@ from openpyxl.styles import Alignment, Font
 from sqlalchemy import func
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from openpyxl import Workbook
 
@@ -24,7 +25,7 @@ from app.bot.utils.excel import (
     APPROVED_FILL,
 )
 from app.db.session import connection
-from app.models import TaskAssignment, TaskReport
+from app.models import TaskAssignment, TaskReport, Task
 from app.models.task_assignment import TaskAssignmentStatus
 from app.models.user import User
 
@@ -587,3 +588,190 @@ async def set_user_blocked(
     user.blocked_at = datetime.now(timezone.utc) if blocked else None
 
     await session.commit()
+
+
+@connection()
+async def get_daily_completed_stats(*, session):
+    """
+    Возвращает количество APPROVED заданий по дням за последние 7 дней.
+    """
+    now = datetime.now(MSC_TZ)
+    date_from = (now - timedelta(days=6)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+    stmt = (
+        select(
+            func.date(TaskAssignment.processed_at).label("day"),
+            func.count(TaskAssignment.id),
+        )
+        .where(
+            TaskAssignment.status == TaskAssignmentStatus.APPROVED,
+            TaskAssignment.processed_at >= date_from,
+        )
+        .group_by("day")
+        .order_by("day")
+    )
+
+    rows = (await session.execute(stmt)).all()
+
+    stats_map = {row[0]: row[1] for row in rows}
+
+    result = []
+    for i in range(7):
+        day = (date_from + timedelta(days=i)).date()
+        count = stats_map.get(day, 0)
+        result.append((day.strftime("%d.%m"), count))
+
+    return result
+
+
+@connection()
+async def get_top_5_users(*, session):
+    """
+    Возвращает топ-5 пользователей по количеству APPROVED заданий.
+    """
+    stmt = (
+        select(
+            User.id,
+            User.full_name,
+            User.tg_id,
+            User.username,
+            func.count(TaskAssignment.id).label("approved_count"),
+        )
+        .join(TaskAssignment, TaskAssignment.user_id == User.id)
+        .where(
+            TaskAssignment.status == TaskAssignmentStatus.APPROVED,
+            User.is_blocked.is_(False),
+        )
+        .group_by(
+            User.id,
+            User.full_name,
+            User.tg_id,
+            User.username,
+        )
+        .order_by(func.count(TaskAssignment.id).desc())
+        .limit(5)
+    )
+
+    rows = (await session.execute(stmt)).all()
+
+    return [
+        {
+            "id": row[0],
+            "name": row[1] or "—",
+            "tg_id": row[2],
+            "username": row[3],
+            "count": row[4],
+        }
+        for row in rows
+    ]
+
+
+def _dt_to_msk_str(dt):
+    if not dt:
+        return "—"
+    return dt.astimezone(MSC_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+@connection()
+async def export_available_tasks_to_excel(*, session) -> io.BytesIO:
+    """
+    Excel-экспорт доступных заданий
+    """
+
+    taken_subquery = select(TaskAssignment.task_id).where(
+        TaskAssignment.is_archived.is_(False)
+    )
+
+    stmt = (
+        select(Task)
+        .options(selectinload(Task.city))
+        .where(~Task.id.in_(taken_subquery))
+        .order_by(Task.created_at.desc())
+    )
+
+    tasks = (await session.execute(stmt)).scalars().all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Available_Tasks"
+
+    col_specs = [
+        ColSpec("created_at", "Создано (МСК)", 22),
+        ColSpec("source", "Источник", 18),
+        ColSpec("city", "Город", 20),
+        ColSpec("required_gender", "От какого лица", 14),
+        ColSpec("link", "Ссылка", 40),
+        ColSpec("text", "Текст задания", 55),
+        ColSpec("example_text", "Пример отзыва", 55),
+    ]
+    ws.append(["Доступные задания"])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(col_specs))
+    ws["A1"].font = Font(bold=True)
+
+    ws.append([c.title for c in col_specs])
+
+    for t in tasks:
+        ws.append(
+            [
+                _dt_to_msk_str(t.created_at),
+                t.source or "—",
+                t.city.name if t.city else "-",
+                gender_ru(t.required_gender),
+                t.link,
+                t.text,
+                t.example_text or "—",
+            ]
+        )
+
+    apply_table_style(ws, col_specs=col_specs)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    return buffer
+
+
+@connection()
+async def get_users_statistics(*, session: AsyncSession) -> dict:
+    now = datetime.now(MSC_TZ)
+
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=7)
+    month_start = today_start - timedelta(days=30)
+
+    total_users = await session.scalar(select(func.count(User.id)))
+
+    new_today = await session.scalar(
+        select(func.count(User.id)).where(User.approval_at >= today_start)
+    )
+
+    new_week = await session.scalar(
+        select(func.count(User.id)).where(User.approval_at >= week_start)
+    )
+
+    new_month = await session.scalar(
+        select(func.count(User.id)).where(User.approval_at >= month_start)
+    )
+
+    return {
+        "total_users": total_users or 0,
+        "new_today": new_today or 0,
+        "new_week": new_week or 0,
+        "new_month": new_month or 0,
+    }
+
+
+@connection()
+async def get_user_weekly_approved_count(*, session, user_id):
+    week_start = datetime.now(MSC_TZ) - timedelta(days=7)
+
+    stmt = select(func.count(TaskAssignment.id)).where(
+        TaskAssignment.user_id == user_id,
+        TaskAssignment.status == TaskAssignmentStatus.APPROVED,
+        TaskAssignment.processed_at >= week_start,
+    )
+
+    return await session.scalar(stmt) or 0

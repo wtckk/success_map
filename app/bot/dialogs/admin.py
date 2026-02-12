@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import io
 from datetime import timedelta, timezone, datetime
 from math import ceil
@@ -12,6 +10,7 @@ from aiogram_dialog.widgets.kbd import Button, Column, Row
 from aiogram_dialog.widgets.text import Const, Format
 from aiogram_dialog.widgets.input import TextInput, MessageInput
 
+
 from app.bot.dialogs.states import AdminSG, MainMenuSG
 from app.core.settings import settings
 from app.repository.admin import (
@@ -20,19 +19,75 @@ from app.repository.admin import (
     get_user_tasks_page,
     export_single_user_tasks_to_excel,
     set_user_blocked,
+    get_daily_completed_stats,
+    get_top_5_users,
+    export_available_tasks_to_excel,
+    get_users_statistics,
+    get_user_weekly_approved_count,
 )
 from app.repository.admin_report import import_tasks_from_excel
+from app.repository.task import get_tasks_statistics
 
 MSC_TZ = timezone(timedelta(hours=3))
 
 PAGE_SIZE = 5
+
+TEMPLATE_PATH = Path("app/static/template.xlsx")
 
 
 async def open_import_tasks(c: CallbackQuery, w: Button, m: DialogManager):
     await m.start(AdminSG.import_tasks, mode=StartMode.RESET_STACK)
 
 
-TEMPLATE_PATH = Path("app/static/template.xlsx")
+def format_minutes(value: float) -> str:
+    if not value:
+        return "—"
+    hours = int(value // 60)
+    minutes = int(value % 60)
+
+    if hours:
+        return f"{hours}ч {minutes}м"
+    return f"{minutes}м"
+
+
+async def global_stats_getter(dialog_manager: DialogManager, **kwargs):
+    stats = await get_tasks_statistics()
+
+    total_assignments = stats["total_assignments"] or 1
+    approved_users = stats["approved_users"] or 1
+
+    approved_percent = round(stats["approved"] / total_assignments * 100)
+    rejected_percent = round(stats["rejected"] / total_assignments * 100)
+    in_progress_percent = round(stats["in_progress"] / total_assignments * 100)
+
+    avg_per_user = round(stats["approved"] / approved_users, 2)
+
+    formatted_exec_time = format_minutes(stats["avg_execution_minutes"])
+
+    users_stats = await get_users_statistics()
+
+    return {
+        "total_tasks": stats["total_tasks"],
+        "free_tasks": stats["free_tasks"],
+        "total_assignments": stats["total_assignments"],
+        "approved": stats["approved"],
+        "approved_percent": approved_percent,
+        "rejected": stats["rejected"],
+        "rejected_percent": rejected_percent,
+        "in_progress": stats["in_progress"],
+        "in_progress_percent": in_progress_percent,
+        "approved_users": stats["approved_users"],
+        "avg_per_user": avg_per_user,
+        "avg_execution_time": formatted_exec_time,
+        "total_users": users_stats["total_users"],
+        "new_today": users_stats["new_today"],
+        "new_week": users_stats["new_week"],
+        "new_month": users_stats["new_month"],
+    }
+
+
+async def open_global_stats(c: CallbackQuery, w: Button, m: DialogManager):
+    await m.start(AdminSG.analytics, mode=StartMode.NORMAL)
 
 
 async def download_import_template(
@@ -463,35 +518,161 @@ async def export_user_stats_excel(c: CallbackQuery, w: Button, m: DialogManager)
     await c.answer("Готово")
 
 
+async def analytics_dynamics_getter(dialog_manager: DialogManager, **kwargs):
+    data = await get_daily_completed_stats()
+
+    if not data:
+        return {"dynamics_text": "📊 Нет данных"}
+
+    max_value = max(count for _, count in data) or 1
+    width = 10
+
+    max_digits = max(len(str(count)) for _, count in data)
+
+    lines = ["📊 <b>Динамика выполненных заданий</b>\n"]
+
+    prev = None
+
+    for day, count in data:
+        bar_len = int((count / max_value) * width)
+        bar = "▰" * bar_len + "▱" * (width - bar_len)
+
+        if prev is None:
+            trend = "➖"
+        elif count > prev:
+            trend = "📈"
+        elif count < prev:
+            trend = "📉"
+        else:
+            trend = "➖"
+
+        prev = count
+
+        count_str = f"{count:>{max_digits}}"
+
+        lines.append(f"{day:>5}  {bar}  <b>{count_str}</b>  {trend}")
+
+    return {"dynamics_text": "\n".join(lines)}
+
+
+async def export_available_tasks(c: CallbackQuery, w: Button, m: DialogManager):
+    buffer = await export_available_tasks_to_excel()
+
+    await c.bot.send_document(
+        chat_id=c.from_user.id,
+        document=BufferedInputFile(
+            buffer.read(),
+            filename="available_tasks.xlsx",
+        ),
+        caption="📦 Доступные задания на текущий момент",
+    )
+    await c.answer("Готово")
+
+
+async def analytics_top_getter(dialog_manager: DialogManager, **kwargs):
+    users = await get_top_5_users()
+
+    if not users:
+        return {"top_text": "📊 Пока нет выполненных заданий"}
+
+    stats = await get_tasks_statistics()
+    total_approved = stats["approved"] or 1
+
+    medals = [
+        "<tg-emoji emoji-id='5188344996356448758'>🥇</tg-emoji>",
+        "🥈",
+        "🥉",
+    ]
+
+    max_count_width = max(len(str(u["count"])) for u in users)
+    percents = [round(u["count"] / total_approved * 100) for u in users]
+    max_percent_width = max(len(str(p)) for p in percents)
+
+    lines = ["🏆 <b>Топ исполнителей</b>\n"]
+
+    for i, user in enumerate(users):
+        medal = medals[i] if i < 3 else f"{i + 1}."
+
+        percent = percents[i]
+        weekly = await get_user_weekly_approved_count(user_id=user["id"])
+
+        trend = f"📈 +{weekly}" if weekly > 0 else "➖ 0"
+
+        count_str = f"{user['count']:>{max_count_width}}"
+        percent_str = f"{percent:>{max_percent_width}}"
+
+        name = (user["name"] or "—").strip()
+        username = f"@{user['username']}" if user["username"] else ""
+
+        if i == 0:
+            lines.append(
+                f"{medal} <b>{name}</b> {username}\n"
+                f"   📦 <b>{count_str}</b>  •  📊 {percent_str}%  •  {trend}"
+            )
+        else:
+            lines.append(
+                f"{medal} {name} {username}\n"
+                f"   📦 <b>{count_str}</b>  •  📊 {percent_str}%  •  {trend}"
+            )
+
+    return {"top_text": "\n\n".join(lines)}
+
+
 async def back_to_admin_main(c: CallbackQuery, w, m: DialogManager):
     await m.start(AdminSG.main, mode=StartMode.RESET_STACK)
 
 
 admin_dialog = Dialog(
-    # MAIN WINDOW
+    # 🛠 MAIN MENU
     Window(
-        Const("🛠 <b>Админ-панель</b>\n\nВыберите действие:"),
+        Const("🛠 <b>Админ-панель</b>\n\nВыберите раздел:"),
+        Column(
+            Button(
+                Const("🧾 Отчёты"),
+                id="go_reports",
+                on_click=lambda c, w, m: m.start(AdminSG.reports),
+            ),
+            Button(
+                Const("📊 Аналитика"),
+                id="go_analytics",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics),
+            ),
+            Button(
+                Const("👥 Пользователи"),
+                id="go_users",
+                on_click=lambda c, w, m: m.start(AdminSG.users),
+            ),
+            Button(
+                Const("⚙️ Управление заданиями"),
+                id="go_manage",
+                on_click=lambda c, w, m: m.start(AdminSG.manage),
+            ),
+            Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
+        ),
+        state=AdminSG.main,
+    ),
+    # 🧾 REPORTS
+    Window(
+        Const("🧾 <b>Отчёты по заданиям</b>\n\nВыберите период:"),
         Column(
             Row(
                 Button(
-                    Const("📊 Сегодня"),
-                    id="tasks_today",
-                    on_click=export_tasks_today,
+                    Const("📊 Сегодня"), id="tasks_today", on_click=export_tasks_today
                 ),
-                Button(
-                    Const("📊 Неделя"),
-                    id="tasks_week",
-                    on_click=export_tasks_week,
-                ),
+                Button(Const("📊 Неделя"), id="tasks_week", on_click=export_tasks_week),
             ),
-            Row(
-                Button(
-                    Const("📊 Все задания"),
-                    id="tasks_all",
-                    on_click=export_tasks_all,
-                ),
+            Button(Const("📊 Всё время"), id="tasks_all", on_click=export_tasks_all),
+        ),
+        Row(
+            Button(
+                Const("⬅️ Назад"), id="back_main_reports", on_click=back_to_admin_main
             ),
         ),
+        state=AdminSG.reports,
+    ),
+    # 👥 USERS SECTION
+    Window(
+        Const("👥 <b>Пользователи</b>\n\nВыберите действие:"),
         Column(
             Button(
                 Const("📄 Экспорт пользователей"),
@@ -499,25 +680,135 @@ admin_dialog = Dialog(
                 on_click=export_users,
             ),
             Button(
-                Const("📈 Действия с пользователем"),
+                Const("📈 Статистика пользователя"),
                 id="user_stats",
                 on_click=open_user_stats_lookup,
             ),
         ),
-        Button(
-            Const("📥 Импорт заданий (Excel)"),
-            id="import_tasks",
-            on_click=open_import_tasks,
+        Row(
+            Button(Const("⬅️ Назад"), id="back_main_users", on_click=back_to_admin_main),
         ),
+        state=AdminSG.users,
+    ),
+    # ⚙️ MANAGE TASKS
+    Window(
+        Const("⚙️ <b>Управление заданиями</b>\n\nВыберите действие:"),
         Column(
             Button(
-                Const("⬅️ В меню"),
-                id="menu",
-                on_click=back_to_menu,
+                Const("📥 Импорт заданий"),
+                id="import_tasks",
+                on_click=open_import_tasks,
+            ),
+            Button(
+                Const("📤 Экспорт доступных заданий"),
+                id="export_available_tasks",
+                on_click=export_available_tasks,
             ),
         ),
-        state=AdminSG.main,
+        Row(
+            Button(
+                Const("⬅️ Назад"), id="back_main_manage", on_click=back_to_admin_main
+            ),
+        ),
+        state=AdminSG.manage,
     ),
+    # 📊 ANALYTICS
+    Window(
+        Const("📊 <b>Аналитика</b>\n\nВыберите раздел:"),
+        Column(
+            Button(
+                Const("📦 Общая статистика"),
+                id="analytics_overview",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics_overview),
+            ),
+            Button(
+                Const("📈 Динамика (7 дней)"),
+                id="analytics_dynamics",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics_dynamics),
+            ),
+            Button(
+                Const("🏆 Топ исполнителей"),
+                id="analytics_top",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics_top),
+            ),
+        ),
+        Row(
+            Button(
+                Const("⬅️ Назад"), id="back_main_analytics", on_click=back_to_admin_main
+            ),
+        ),
+        state=AdminSG.analytics,
+    ),
+    Window(
+        Format(
+            "📦 <b>ОБЩАЯ СТАТИСТИКА</b>\n\n"
+            "📋 <b>Задания</b>\n"
+            "   Всего: <b>{total_tasks}</b>\n"
+            "   ├ 🟢 Доступно: <b>{free_tasks}</b>\n"
+            "   ├ ⏳ В работе: <b>{in_progress}</b>  (<b>{in_progress_percent}%</b>)\n"
+            "   ├ ✅ Выполнено: <b>{approved}</b>  (<b>{approved_percent}%</b>)\n"
+            "   └ ❌ Отклонено: <b>{rejected}</b>  (<b>{rejected_percent}%</b>)\n\n"
+            "👥 <b>Пользователи</b>\n"
+            "   Всего: <b>{total_users}</b>\n"
+            "   ├ Сегодня: <b>{new_today}</b>\n"
+            "   ├ 7 дней: <b>{new_week}</b>\n"
+            "   └ 30 дней: <b>{new_month}</b>\n\n"
+            "👤 <b>Исполнители</b>\n"
+            "   Активных: <b>{approved_users}</b>\n"
+            "   └ Один исполнитель выполняет ~<b>{avg_per_user}</b> заданий\n\n"
+            "⏱ <b>Эффективность</b>\n"
+            "   └ Среднее время выполнения: <b>{avg_execution_time}</b>"
+        ),
+        Row(
+            Button(
+                Const("🔄 Обновить"),
+                id="refresh_overview",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics_overview),
+            ),
+            Button(
+                Const("⬅️ Назад"),
+                id="back_overview",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics),
+            ),
+        ),
+        getter=global_stats_getter,
+        state=AdminSG.analytics_overview,
+    ),
+    Window(
+        Format("📈 <b>Динамика (7 дней)</b>\n\n<code>{dynamics_text}</code>"),
+        Row(
+            Button(
+                Const("🔄 Обновить"),
+                id="refresh_dyn",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics_dynamics),
+            ),
+            Button(
+                Const("⬅️ Назад"),
+                id="back_dyn",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics),
+            ),
+        ),
+        getter=analytics_dynamics_getter,
+        state=AdminSG.analytics_dynamics,
+    ),
+    Window(
+        Format("{top_text}"),
+        Row(
+            Button(
+                Const("🔄 Обновить"),
+                id="refresh_top",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics_top),
+            ),
+            Button(
+                Const("⬅️ Назад"),
+                id="back_top",
+                on_click=lambda c, w, m: m.start(AdminSG.analytics),
+            ),
+        ),
+        getter=analytics_top_getter,
+        state=AdminSG.analytics_top,
+    ),
+    # 📈 USER LOOKUP
     Window(
         Const(
             "📈 <b>Информация о пользователе</b>\n\n"
@@ -530,10 +821,13 @@ admin_dialog = Dialog(
             on_success=on_tg_id_input,
         ),
         Row(
-            Button(Const("⬅️ Назад"), id="back_admin", on_click=back_to_admin_main),
+            Button(
+                Const("⬅️ Назад"), id="back_admin_lookup", on_click=back_to_admin_main
+            ),
         ),
         state=AdminSG.user_lookup,
     ),
+    # 👤 USER TASKS
     Window(
         Format(
             "📈 <b>Статистика пользователя</b>\n\n"
@@ -588,38 +882,21 @@ admin_dialog = Dialog(
         ),
         Row(
             Button(
-                Const("⬅️ Назад в админку"), id="back_main", on_click=back_to_admin_main
+                Const("⬅️ Назад в админку"),
+                id="back_main_user_tasks",
+                on_click=back_to_admin_main,
             ),
         ),
         getter=user_tasks_getter,
         state=AdminSG.user_tasks,
         disable_web_page_preview=True,
     ),
+    # 📥 IMPORT
     Window(
         Const(
             "📥 <b>Импорт заданий из Excel</b>\n\n"
-            "📄 <b>Формат Excel-файла</b>\n\n"
-            "1️⃣ <b>Текст отзыва</b>\n"
-            "• Текст, который пользователь должен написать в отзыве\n"
-            "• Будет сохранён как <i>пример текста</i>\n"
-            "• Обязательное поле\n\n"
-            "2️⃣ <b>Город</b>\n"
-            "• Название города <b>строго как в системе</b>\n"
-            "• Можно оставить пустым — тогда задание подойдёт для любого города\n"
-            "• Примеры: <code>Москва</code>, <code>Екатеринбург</code>, <code>Тюмень</code>\n\n"
-            "3️⃣ <b>Пол</b>\n"
-            "• Допустимые значения:\n"
-            "  – <code>m</code>, <code>м</code>, <code>male</code>, <code>мужской</code>\n"
-            "  – <code>f</code>, <code>ж</code>, <code>female</code>, <code>женский</code>\n"
-            "  – <code>н/а</code>, пусто — без ограничения по полу\n\n"
-            "4️⃣ <b>Ссылка на отзыв</b>\n"
-            "• Прямая ссылка, где пользователь должен оставить отзыв\n"
-            "• Обязательное поле\n\n"
-            "⚠️ <b>Важно</b>\n"
-            "• Если <b>хотя бы в одной строке</b> есть ошибка —\n"
-            "  <b>ни одно задание создано не будет</b>\n"
-            "• Все ошибки будут показаны после загрузки файла\n\n"
-            "⬆️ Отправь Excel-файл или нажми «Назад»."
+            "Отправь Excel-файл в формате .xlsx\n"
+            "Если в файле будет ошибка — ни одно задание создано не будет."
         ),
         MessageInput(
             on_excel_uploaded,
@@ -635,7 +912,7 @@ admin_dialog = Dialog(
         Row(
             Button(
                 Const("⬅️ Назад в админку"),
-                id="back_admin",
+                id="back_admin_import",
                 on_click=back_to_admin_main,
             ),
         ),

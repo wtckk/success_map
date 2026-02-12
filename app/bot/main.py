@@ -53,7 +53,6 @@ async def main() -> None:
 
     dp.update.middleware(ApprovalMiddleware())
 
-
     dp.include_router(start_router)
     dp.include_router(admin_router)
     dp.include_router(user_approval_router)
@@ -68,6 +67,7 @@ async def main() -> None:
     dp.include_router(admin_dialog)
 
     scheduler = setup_scheduler(bot)
+    dp.workflow_data["scheduler"] = scheduler
     setup_dialogs(dp)
 
     await dp.start_polling(bot)

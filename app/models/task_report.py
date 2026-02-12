@@ -1,6 +1,3 @@
-# app/models/task_report.py
-from __future__ import annotations
-
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, String, func
@@ -27,5 +24,7 @@ class TaskReport(Base):
     account_name: Mapped[str] = mapped_column(String(128))
     photo_file_id: Mapped[str] = mapped_column(String(256))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=uuid.uuid4,
     )

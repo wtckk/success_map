@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 
 from aiogram import F
@@ -17,9 +15,11 @@ from aiogram_dialog.widgets.kbd import Button
 from aiogram_dialog.widgets.input import TextInput, MessageInput
 
 from app.bot.dialogs.states import TasksSG, MainMenuSG
+from app.bot.ui.widgets.custom_button import CustomEmojiButton
 from app.bot.utils.tg import notify_admins_about_report
 from app.repository.task import (
     get_active_assignment,
+    has_available_tasks_for_source,
     assign_random_task,
     submit_report,
     save_assignment_report_message_id,
@@ -27,6 +27,91 @@ from app.repository.task import (
 from app.repository.user import get_user_by_tg_id
 
 logger = logging.getLogger(__name__)
+
+SOURCE_MAP = {
+    "yandex": ("🗺 Яндекс Карты", "Яндекс Карты"),
+    "2gis": ("📍 2ГИС", "2ГИС"),
+    "google": ("🌐 Google Maps", "Google Maps"),
+}
+
+
+async def choose_source(
+    callback: CallbackQuery,
+    button: Button,
+    dialog_manager: DialogManager,
+):
+    user = await get_user_by_tg_id(callback.from_user.id)
+
+    # на всякий случай (если пользователь открыл окно и успел получить задание где-то ещё)
+    active = await get_active_assignment(user.id)
+    if active:
+        await callback.answer(
+            "⏳ У вас уже есть активное задание.",
+            show_alert=True,
+        )
+        await resolve_tasks_state(dialog_manager)
+        return
+
+    source_key = button.widget_id
+    source_title, source_value = SOURCE_MAP[source_key]
+
+    has_any = await has_available_tasks_for_source(user, source=source_value)
+    if not has_any:
+        await callback.answer(
+            f"📭 Сейчас нет доступных заданий из источника {source_title}.\n"
+            f"Попробуйте выбрать другой источник или зайдите позже.",
+            show_alert=True,
+        )
+        # остаёмся на выборе источника
+        return
+
+    dialog_manager.dialog_data["source"] = source_key
+    await dialog_manager.switch_to(TasksSG.choose_gender)
+
+
+async def choose_gender(
+    callback: CallbackQuery,
+    button: Button,
+    dialog_manager: DialogManager,
+):
+    user = await get_user_by_tg_id(callback.from_user.id)
+
+    source_key = dialog_manager.dialog_data["source"]
+    source_value = SOURCE_MAP[source_key][1]
+
+    gender = {
+        "male": "M",
+        "female": "F",
+        "any": None,
+    }[button.widget_id]
+
+    result = await assign_random_task(
+        user,
+        source=source_value,
+        required_gender=gender,
+    )
+
+    if result == "blocked":
+        await callback.answer("⛔ Ваш аккаунт заблокирован.", show_alert=True)
+        return
+
+    if result == "already_has":
+        await callback.answer(
+            "⏳ У вас уже есть задание (выполняется или на проверке).",
+            show_alert=True,
+        )
+        await resolve_tasks_state(dialog_manager)
+        return
+
+    if result == "no_tasks":
+        await callback.answer(
+            "📭 Нет заданий под выбранные параметры.\n"
+            "Попробуйте изменить пол или вернуться назад и выбрать другой источник.",
+            show_alert=True,
+        )
+        return
+
+    await resolve_tasks_state(dialog_manager)
 
 
 async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
@@ -55,13 +140,14 @@ async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
     }
 
     persona_block = (
-        f"\n\n<b>От какого лица писать отзыв:</b>"
+        f"\n\n<b>От какого лица писать отзыв:</b> "
         f"{persona_map.get(task.required_gender, 'Не указано')}"
     )
 
     base_text = (
         f"{task.text}{example_block}{persona_block}\n\n🔗 <b>Ссылка:</b>\n{task.link}"
     )
+
     if assignment.status == "ASSIGNED":
         return {
             "state": "assigned",
@@ -75,10 +161,7 @@ async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
             "state": "checking",
             "assignment_id": assignment.id,
             "title": "📦 Задание на проверке",
-            "text": (
-                base_text
-                + "\n\n⏳ <i>Отчёт отправлен и ожидает проверки администратора</i>"
-            ),
+            "text": base_text + "\n\n⏳ <i>Отчёт ожидает проверки</i>",
         }
 
     return {
@@ -112,30 +195,25 @@ async def get_task(
 ):
     user = await get_user_by_tg_id(callback.from_user.id)
 
-    result = await assign_random_task(user)
+    if user.is_blocked:
+        await callback.answer("⛔ Ваш аккаунт заблокирован.", show_alert=True)
+        return
 
-    if result == "already_has":
+    active = await get_active_assignment(user.id)
+    if active:
         await callback.answer(
             "⏳ У вас уже есть задание (выполняется или на проверке).",
             show_alert=True,
         )
         return
 
-    if result == "no_tasks":
-        await callback.answer(
-            "📭 Сейчас нет доступных заданий. Попробуйте позже.",
-            show_alert=True,
-        )
-        return
+    dialog_manager.dialog_data.clear()
+    await dialog_manager.switch_to(TasksSG.choose_source)
 
-    if result == "blocked":
-        await callback.answer(
-            "⛔ Ваш аккаунт заблокирован.",
-            show_alert=True,
-        )
-        return
 
-    await resolve_tasks_state(dialog_manager)
+# =======================
+# REPORT FLOW (UNCHANGED)
+# =======================
 
 
 async def start_report(
@@ -216,6 +294,10 @@ async def back_to_menu(
     )
 
 
+# =======================
+# DIALOG
+# =======================
+
 tasks_dialog = Dialog(
     Window(
         Format("<b>{title}</b>\n\n{text}"),
@@ -231,41 +313,58 @@ tasks_dialog = Dialog(
             on_click=start_report,
             when=lambda d, *_: d["state"] == "assigned",
         ),
-        Button(
-            Const("⬅️ В меню"),
-            id="menu",
-            on_click=back_to_menu,
-        ),
+        Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
         getter=tasks_getter,
         state=TasksSG.empty,
-        disable_web_page_preview=True,
+    ),
+    Window(
+        Const("📦 <b>Откуда хотите взять задание?</b>"),
+        CustomEmojiButton(
+            Const("Яндекс"),
+            id="yandex",
+            on_click=choose_source,
+            icon_custom_emoji_id="5359811897677848798",
+        ),
+        CustomEmojiButton(
+            Const("2ГИС"),
+            id="2gis",
+            on_click=choose_source,
+            icon_custom_emoji_id="5244638999561135703",
+        ),
+        CustomEmojiButton(
+            Const("Google Maps"),
+            id="google",
+            on_click=choose_source,
+            icon_custom_emoji_id="5343611925282435092",
+        ),
+        Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
+        state=TasksSG.choose_source,
+        parse_mode=ParseMode.HTML,
+    ),
+    Window(
+        Const("✍️ <b>От какого лица хотите написать отзыв?</b>"),
+        Button(Const("👨 Мужского"), id="male", on_click=choose_gender),
+        Button(Const("👩 Женского"), id="female", on_click=choose_gender),
+        Button(Const("🧑 Не важно"), id="any", on_click=choose_gender),
+        Button(
+            Const("⬅️ Назад"),
+            id="back",
+            on_click=lambda c, b, d: d.switch_to(TasksSG.choose_source),
+        ),
+        state=TasksSG.choose_gender,
     ),
     Window(
         Format("<b>{title}</b>\n\n{text}"),
-        Button(
-            Const("📤 Отправить отчёт"),
-            id="report",
-            on_click=start_report,
-        ),
-        Button(
-            Const("⬅️ В меню"),
-            id="menu",
-            on_click=back_to_menu,
-        ),
+        Button(Const("📤 Отправить отчёт"), id="report", on_click=start_report),
+        Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
         getter=tasks_getter,
         state=TasksSG.assigned,
-        disable_web_page_preview=True,
     ),
     Window(
         Format("<b>{title}</b>\n\n{text}"),
-        Button(
-            Const("⬅️ В меню"),
-            id="menu",
-            on_click=back_to_menu,
-        ),
+        Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
         getter=tasks_getter,
         state=TasksSG.checking,
-        disable_web_page_preview=True,
     ),
     Window(
         Const("✍️ Укажите имя аккаунта:"),
@@ -278,7 +377,6 @@ tasks_dialog = Dialog(
         MessageInput(func=save_photo, filter=F.photo),
         MessageInput(func=invalid_photo),
         state=TasksSG.report_photo,
-        disable_web_page_preview=True,
     ),
     on_start=on_start,
 )

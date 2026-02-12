@@ -4,6 +4,9 @@ import logging
 import pandas as pd
 from sqlalchemy import select
 
+from urllib.parse import urlparse
+
+
 from app.db.session import connection
 from app.models import Task
 from app.models.city import City
@@ -13,6 +16,28 @@ logger = logging.getLogger(__name__)
 
 class ImportRowError(Exception):
     pass
+
+
+class UnknownSourceError(ImportRowError):
+    pass
+
+
+def parse_source_and_text(link: str) -> tuple[str, str]:
+    """
+    Возвращает (source, text)
+    """
+    netloc = urlparse(link).netloc.lower()
+
+    if "yandex" in netloc:
+        return "Яндекс Карты", "Оставить отзыв на Яндекс Картах"
+
+    if "2gis" in netloc:
+        return "2ГИС", "Оставить отзыв в 2ГИС"
+
+    if "google" in netloc:
+        return "Google Maps", "Оставить отзыв в Google Maps"
+
+    raise UnknownSourceError(f"Неизвестный источник ссылки: {link}")
 
 
 def parse_gender(value) -> str | None:
@@ -75,9 +100,12 @@ async def import_tasks_from_excel(
 
         try:
             gender = parse_gender(gender_raw)
-        except ImportRowError as e:
+            source, task_text = parse_source_and_text(str(link).strip())
+        except (ImportRowError, UnknownSourceError) as e:
             row_errors.append(str(e))
             gender = None
+            source = None
+            task_text = None
 
         city_id = None
         if not pd.isna(city_name):
@@ -97,9 +125,10 @@ async def import_tasks_from_excel(
         tasks_to_create.append(
             Task(
                 id=uuid.uuid4(),
-                text="Оставить отзыв на Яндекс Картах",
+                text=task_text,
                 example_text=str(text_example).strip(),
                 link=str(link).strip(),
+                source=source,
                 required_gender=gender,
                 city_id=city_id,
             )
