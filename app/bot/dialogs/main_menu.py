@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 
 from aiogram.types import CallbackQuery
@@ -23,9 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 def is_admin(data: dict, widget, manager: DialogManager) -> bool:
-    user = manager.event.from_user
-    return user.id in settings.admin_id_list
+    event = manager.event
 
+    from_user = getattr(event, "from_user", None)
+    if from_user is None:
+        update = getattr(event, "update", None)
+        if update:
+            if getattr(update, "callback_query", None):
+                from_user = update.callback_query.from_user
+            elif getattr(update, "message", None):
+                from_user = update.message.from_user
+
+    return bool(from_user and from_user.id in settings.admin_id_list)
 
 async def go_profile(
     callback: CallbackQuery,

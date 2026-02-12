@@ -3,7 +3,10 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram_dialog import setup_dialogs
+from aiogram.filters import ExceptionTypeFilter
+from aiogram.types import Message, CallbackQuery, ErrorEvent
+from aiogram_dialog import setup_dialogs, StartMode, DialogManager, ShowMode
+from aiogram_dialog.api.exceptions import UnknownIntent
 
 from app.bot.dialogs.admin import admin_dialog
 from app.bot.dialogs.info_pages import (
@@ -11,6 +14,7 @@ from app.bot.dialogs.info_pages import (
     rules_dialog,
     contacts_dialog,
 )
+from app.bot.dialogs.states import MainMenuSG
 from app.bot.middlewares.approval import ApprovalMiddleware
 from app.bot.middlewares.block_user import BlockUserMiddleware
 from app.bot.scheduler import setup_scheduler
@@ -36,6 +40,22 @@ from app.bot.dialogs.profile import profile_dialog
 from app.bot.handlers.user_approval import router as user_approval_router
 
 logger = logging.getLogger(__name__)
+
+async def on_unknown_intent(event, dialog_manager: DialogManager):
+    logger.error("Restarting dialog: %s", event.exception)
+
+    upd = event.update
+    if upd and upd.callback_query:
+        await upd.callback_query.answer(
+            "🔄 Сессия устарела. Возвращаю в главное меню.",
+            show_alert=False,
+        )
+
+    await dialog_manager.start(
+        MainMenuSG.main,
+        mode=StartMode.RESET_STACK,
+        show_mode=ShowMode.SEND,
+    )
 
 
 async def main() -> None:
@@ -65,6 +85,11 @@ async def main() -> None:
     dp.include_router(contacts_dialog)
     dp.include_router(referrals_dialog)
     dp.include_router(admin_dialog)
+
+    dp.errors.register(
+        on_unknown_intent,
+        ExceptionTypeFilter(UnknownIntent),
+    )
 
     scheduler = setup_scheduler(bot)
     dp.workflow_data["scheduler"] = scheduler
