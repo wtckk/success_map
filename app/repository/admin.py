@@ -27,7 +27,7 @@ from app.bot.utils.excel import (
 from app.db.session import connection
 from app.models import TaskAssignment, TaskReport, Task
 from app.models.task_assignment import TaskAssignmentStatus
-from app.models.user import User
+from app.models.user import User, UserApprovalStatus
 
 logger = logging.getLogger(__name__)
 
@@ -742,18 +742,31 @@ async def get_users_statistics(*, session: AsyncSession) -> dict:
     week_start = today_start - timedelta(days=7)
     month_start = today_start - timedelta(days=30)
 
-    total_users = await session.scalar(select(func.count(User.id)))
+    total_users = await session.scalar(
+        select(func.count(User.id)).where(
+            User.approval_status == UserApprovalStatus.APPROVED
+        )
+    )
 
     new_today = await session.scalar(
-        select(func.count(User.id)).where(User.approval_at >= today_start)
+        select(func.count(User.id)).where(
+            User.approval_status == UserApprovalStatus.APPROVED,
+            User.approval_at >= today_start
+        )
     )
 
     new_week = await session.scalar(
-        select(func.count(User.id)).where(User.approval_at >= week_start)
+        select(func.count(User.id)).where(
+            User.approval_status == UserApprovalStatus.APPROVED,
+            User.approval_at >= week_start
+        )
     )
 
     new_month = await session.scalar(
-        select(func.count(User.id)).where(User.approval_at >= month_start)
+        select(func.count(User.id)).where(
+            User.approval_status == UserApprovalStatus.APPROVED,
+            User.approval_at >= month_start
+        )
     )
 
     return {
