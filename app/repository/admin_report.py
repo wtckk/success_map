@@ -26,19 +26,35 @@ def parse_source_and_text(link: str) -> tuple[str, str]:
     """
     Возвращает (source, text)
     """
-    netloc = urlparse(link).netloc.lower()
+    parsed = urlparse(link)
+    netloc = parsed.netloc.lower()
 
-    if "yandex" in netloc:
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+
+    google_domains = {
+        "google.com",
+        "maps.google.com",
+        "goo.gl",
+        "maps.app.goo.gl",
+    }
+
+    if any(domain in netloc for domain in google_domains):
+        return "Google Maps", "Оставить отзыв в Google Maps"
+
+    yandex_domains = {
+        "yandex.ru",
+        "yandex.com",
+        "maps.yandex.ru",
+    }
+
+    if any(domain in netloc for domain in yandex_domains):
         return "Яндекс Карты", "Оставить отзыв на Яндекс Картах"
 
     if "2gis" in netloc:
         return "2ГИС", "Оставить отзыв в 2ГИС"
 
-    if "google" in netloc:
-        return "Google Maps", "Оставить отзыв в Google Maps"
-
     raise UnknownSourceError(f"Неизвестный источник ссылки: {link}")
-
 
 def parse_gender(value) -> str | None:
     if value is None or pd.isna(value):
