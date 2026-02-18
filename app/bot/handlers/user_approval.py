@@ -13,7 +13,7 @@ from app.repository.user import (
     reject_user,
     get_approval_messages_by_user,
     get_user_tg_id,
-    get_user_by_id,
+    get_user_by_id, get_user_id_by_tg_id, get_user_by_tg_id,
 )
 
 MSC_TZ = timezone(timedelta(hours=3))
@@ -62,7 +62,7 @@ async def update_user_approval_messages(
             f"{user.referrer.full_name or 'Без имени'} "
             f"(@{user.referrer.username or user.referrer.tg_id})"
         )
-
+    admin = await get_user_by_tg_id(tg_id=admin_tg_id)
     text = (
         f"{status}\n\n"
         f"👤 ФИО: {user.full_name}\n"
@@ -71,7 +71,7 @@ async def update_user_approval_messages(
         f"⚧ Пол: {'Мужской' if user.gender == 'M' else 'Женский'}\n"
         f"🆔 Telegram ID: <code>{user.tg_id}</code>\n"
         f"🔗 Пригласил: {referrer_text}\n\n"
-        f"👮 Администратор: <code>{admin_tg_id}</code>\n"
+        f"👮 Администратор: {'@'+admin.username if admin else admin_tg_id}\n"
         f"🕒 Время: {time_str}"
     )
 

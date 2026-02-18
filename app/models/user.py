@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, String, DateTime
+from sqlalchemy import BigInteger, ForeignKey, String, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import uuid
 from sqlalchemy.dialects.postgresql import UUID
@@ -79,6 +79,12 @@ class User(Base):
     approval_comment: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
+    )
+
+    is_channel_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
     )
 
     city = relationship("City")

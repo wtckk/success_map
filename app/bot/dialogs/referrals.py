@@ -31,7 +31,7 @@ async def referrals_getter(dialog_manager: DialogManager, **_):
     lines = []
     for r in page_items:
         name = r["full_name"] or "—"
-        username = f"@{r['username']}" if r.get("username") else "—"
+        username = f"{r['username']}" if r.get("username") else "—"
         city = r["city"] or "—"
 
         lines.append(

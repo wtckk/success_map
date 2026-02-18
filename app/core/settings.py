@@ -9,12 +9,15 @@ class Settings(BaseSettings):
 
     bot_token: str = Field(alias="BOT_TOKEN")
     admin_ids: str = Field(alias="ADMIN_IDS")
-
+    required_channel_id: str = Field(alias="REQUIRED_CHANNEL_ID")
+    channel_invite_link: str = Field(alias="CHANNEL_INVITE_LINK")
     db_host: str = Field(alias="DB_HOST")
     db_port: int = Field(alias="DB_PORT")
     db_user: str = Field(alias="DB_USER")
     db_password: str = Field(alias="DB_PASSWORD")
     db_name: str = Field(alias="DB_NAME")
+
+    max_active_assignments: int = 3
 
     @property
     def database_url(self) -> str:

@@ -77,12 +77,13 @@ async def admin_review_handler(
             )
 
     status_text = "✅ <b>Одобрено</b>" if approve else "❌ <b>Отклонено</b>"
-
+    time_str = datetime.now(MSC_TZ).strftime("%Y-%m-%d %H:%M")
     new_caption = (
         callback.message.caption
         + "\n\n"
         + status_text
         + f"\n👨‍⚖️ Администратор: @{callback.from_user.username or callback.from_user.id}"
+          f"\n🕒 Время: {time_str}"
     )
 
     messages = await get_admin_messages_by_assignment(assignment_id=assignment.id)

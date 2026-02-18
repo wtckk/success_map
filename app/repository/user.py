@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload, aliased
 
 from app.core.settings import settings
 from app.db.session import connection
-from app.models import Task
+from app.models import Task, TaskReport
 from app.models.user import User, UserApprovalStatus
 from app.models.task_assignment import TaskAssignment, TaskAssignmentStatus
 from app.models.user_approval_admin_message import UserApprovalAdminMessage
@@ -227,11 +227,18 @@ async def get_approved_tasks(
     session,
 ) -> list[dict]:
     stmt = (
-        select(Task.text, Task.link, Task.example_text)
+        select(
+            Task.text,
+            Task.link,
+            Task.source,
+            TaskAssignment.processed_at,
+            TaskReport.account_name,
+        )
         .join(TaskAssignment, TaskAssignment.task_id == Task.id)
+        .join(TaskReport, TaskReport.assignment_id == TaskAssignment.id)
         .where(
             TaskAssignment.user_id == user_id,
-            TaskAssignment.status == "APPROVED",
+            TaskAssignment.status == TaskAssignmentStatus.APPROVED,
         )
         .order_by(TaskAssignment.processed_at.desc())
     )
@@ -239,8 +246,14 @@ async def get_approved_tasks(
     result = await session.execute(stmt)
 
     return [
-        {"title": title, "link": link, "example_text": example_text}
-        for title, link, example_text in result.all()
+        {
+            "title": title,
+            "link": link,
+            "source": source,
+            "processed_at": processed_at,
+            "account_name": account_name,
+        }
+        for title, link, source, processed_at, account_name in result.all()
     ]
 
 
@@ -378,3 +391,20 @@ async def get_user_tg_id(
 ) -> int | None:
     result = await session.execute(select(User.tg_id).where(User.id == user_id))
     return result.scalar_one_or_none()
+
+
+@connection()
+async def mark_user_channel_verified(
+    tg_id: int,
+    *,
+    session: AsyncSession,
+) -> None:
+    """
+    Отмечает пользователя как прошедшего проверку подписки.
+    """
+
+    await session.execute(
+        update(User).where(User.tg_id == tg_id).values(is_channel_verified=True)
+    )
+
+    await session.commit()

@@ -1,4 +1,3 @@
-import random
 import uuid
 import logging
 from datetime import datetime, timezone, timedelta
@@ -7,7 +6,7 @@ from sqlalchemy import select, update, func, exists
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
+from app.core.settings import settings
 from app.db.session import connection
 from app.models import TaskReport
 from app.models.task_assignment import (
@@ -22,6 +21,13 @@ from app.models.task import Task
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+MSC_TZ = timezone(timedelta(hours=3))
+
+
+def _ekb_day_start() -> datetime:
+    now = datetime.now(MSC_TZ)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 @connection()
@@ -46,6 +52,44 @@ async def get_active_assignment(
     )
     res = await session.execute(stmt)
     return res.scalar_one_or_none()
+
+
+@connection()
+async def get_current_assignment(
+    user_id: uuid.UUID,
+    *,
+    session,
+) -> TaskAssignment | None:
+    stmt = (
+        select(TaskAssignment)
+        .where(
+            TaskAssignment.user_id == user_id,
+            TaskAssignment.is_archived.is_(False),
+            TaskAssignment.status == TaskAssignmentStatus.ASSIGNED,
+        )
+        .options(selectinload(TaskAssignment.task))
+    )
+    res = await session.execute(stmt)
+    return res.scalar_one_or_none()
+
+
+@connection()
+async def get_submitted_count(
+    user_id: uuid.UUID,
+    *,
+    session,
+) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(TaskAssignment)
+        .where(
+            TaskAssignment.user_id == user_id,
+            TaskAssignment.is_archived.is_(False),
+            TaskAssignment.status == TaskAssignmentStatus.SUBMITTED,
+        )
+    )
+    res = await session.execute(stmt)
+    return res.scalar_one()
 
 
 @connection()
@@ -88,33 +132,26 @@ async def assign_random_task(
     session,
     source: str | None,
     required_gender: str | None,
-) -> TaskAssignment | None | str:
-    logger.info(
-        "Попытка выдачи задания пользователю tg_id=%s user_id=%s",
-        user.tg_id,
-        user.id,
-    )
+) -> TaskAssignment | str | None:
+    logger.info(f"[ASSIGN_START] tg_id={user.tg_id}")
 
     if user.is_blocked:
-        logger.warning(
-            "Пользователь заблокирован, задание не выдано tg_id=%s",
-            user.tg_id,
-        )
         return "blocked"
 
-    active = await get_active_assignment(user.id)
-    if active:
-        logger.info(
-            "У пользователя уже есть активное задание assignment_id=%s tg_id=%s",
-            active.id,
-            user.tg_id,
-        )
-        return "already_has"
+    current = await get_current_assignment(user.id)
+    if current:
+        logger.info(f"[ASSIGN_HAS_ACTIVE] tg_id={user.tg_id}")
+        return "has_active"
 
-    # подходящие задания
-    stmt = select(Task).where(
+    submitted_count = await get_submitted_count(user.id)
+    if submitted_count >= settings.max_active_assignments:
+        logger.info(
+            f"[ASSIGN_SUBMITTED_LIMIT] tg_id={user.tg_id} submitted={submitted_count}"
+        )
+        return "submitted_limit"
+
+    conditions = [
         or_(Task.city_id.is_(None), Task.city_id == user.city_id),
-        or_(Task.required_gender.is_(None), Task.required_gender == required_gender),
         Task.source == source,
         ~Task.id.in_(
             select(TaskAssignment.task_id).where(
@@ -126,18 +163,22 @@ async def assign_random_task(
                 TaskAssignment.user_id == user.id,
             )
         ),
-    )
+    ]
 
-    tasks = (await session.execute(stmt)).scalars().all()
-    if not tasks:
-        logger.info(
-            "Нет доступных заданий для пользователя tg_id=%s city_id=%s",
-            user.tg_id,
-            user.city_id,
+    if required_gender is not None:
+        conditions.append(
+            or_(
+                Task.required_gender.is_(None),
+                Task.required_gender == required_gender,
+            )
         )
-        return "no_tasks"
 
-    task = random.choice(tasks)
+    stmt = select(Task).where(*conditions).order_by(func.random()).limit(1)
+
+    task = (await session.execute(stmt)).scalars().first()
+
+    if not task:
+        return "no_tasks"
 
     assignment = TaskAssignment(
         user_id=user.id,
@@ -145,23 +186,12 @@ async def assign_random_task(
         status=TaskAssignmentStatus.ASSIGNED,
     )
     session.add(assignment)
+
     try:
         await session.commit()
     except IntegrityError:
         await session.rollback()
-
-        logger.warning(
-            "Race condition: задание task_id=%s уже было выдано другому пользователю",
-            task.id,
-        )
         return "no_tasks"
-
-    logger.info(
-        "Задание выдано assignment_id=%s task_id=%s tg_id=%s",
-        assignment.id,
-        task.id,
-        user.tg_id,
-    )
 
     return assignment
 
@@ -201,10 +231,8 @@ async def submit_report(
     if assignment.user.is_blocked:
         raise ValueError("Пользователь заблокирован и не может отправлять отчёты")
     if assignment.status != TaskAssignmentStatus.ASSIGNED:
-        # Если отчёт уже отправлен/принят/отклонён — не перезаписываем
         raise ValueError("Нельзя отправить отчёт для задания в текущем статусе")
 
-    # 1) создаём/заменяем отчёт (у тебя unique=True на assignment_id)
     existing_report = await session.execute(
         select(TaskReport).where(TaskReport.assignment_id == assignment_id)
     )
@@ -221,7 +249,6 @@ async def submit_report(
         )
         session.add(report)
 
-    # 2) обновляем статус выдачи
     assignment.status = TaskAssignmentStatus.SUBMITTED
     assignment.submitted_at = datetime.now(timezone.utc)
 
@@ -367,14 +394,6 @@ async def save_assignment_report_message_id(
         await session.commit()
 
 
-MSC_TZ = timezone(timedelta(hours=3))
-
-
-def _ekb_day_start() -> datetime:
-    now = datetime.now(MSC_TZ)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
-
-
 @connection()
 async def archive_rejected_assignments(*, session) -> int:
     """
@@ -507,3 +526,27 @@ async def get_tasks_statistics(*, session: AsyncSession) -> dict:
         "approved_users": approved_users or 0,
         "avg_execution_minutes": round(avg_execution_minutes, 2),
     }
+
+
+@connection()
+async def get_submitted_assignments(
+    user_id: uuid.UUID,
+    *,
+    session,
+) -> list[TaskAssignment]:
+    stmt = (
+        select(TaskAssignment)
+        .where(
+            TaskAssignment.user_id == user_id,
+            TaskAssignment.is_archived.is_(False),
+            TaskAssignment.status == TaskAssignmentStatus.SUBMITTED,
+        )
+        .options(
+            selectinload(TaskAssignment.task),
+            selectinload(TaskAssignment.user),
+            selectinload(TaskAssignment.reports),
+        )
+        .order_by(TaskAssignment.submitted_at.desc())
+    )
+    res = await session.execute(stmt)
+    return res.scalars().all()

@@ -7,10 +7,15 @@ class RegistrationSG(StatesGroup):
     city = State()
     gender = State()
     waiting = State()
+    confirm = State()
 
 
 class MainMenuSG(StatesGroup):
     main = State()
+
+
+class SubscriptionSG(StatesGroup):
+    check = State()
 
 
 class PaymentsSG(StatesGroup):
@@ -53,9 +58,7 @@ class AdminSG(StatesGroup):
 
 
 class TasksSG(StatesGroup):
-    empty = State()  # нет задания
-    assigned = State()  # есть задание
-    submitted_info = State()
+    empty = State()
     checking = State()
 
     choose_source = State()
@@ -63,3 +66,5 @@ class TasksSG(StatesGroup):
 
     report_account = State()
     report_photo = State()
+
+    review_list = State()

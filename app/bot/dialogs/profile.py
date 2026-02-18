@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 TASKS_PER_PAGE = 5
+MAX_MESSAGE_LENGTH = 3800
 
 
 async def profile_getter(dialog_manager: DialogManager, **_):
@@ -41,16 +42,38 @@ async def history_getter(dialog_manager: DialogManager, **_):
         text = "📦 <b>История заданий</b>\n\nПока нет выполненных заданий."
     else:
         lines = []
+
         for i, task in enumerate(page_tasks, start + 1):
-            lines.append(
-                f"{i}. <b>{task['title']}</b>\n🔗 {task['link']}\n📜 {task['example_text']}"
+            date_str = (
+                task["processed_at"].strftime("%d.%m.%Y")
+                if task["processed_at"]
+                else "—"
             )
+
+            source = task.get("source") or "Источник"
+            account = task.get("account_name") or "—"
+            link_html = f"<a href='{task['link']}'>Открыть задание</a>"
+
+            card = (
+                f"🟢 <b>№{i}</b>\n"
+                f"📝 <b>{task['title']}</b>\n"
+                f"🌐 {source}\n"
+                f"👤 Аккаунт: <b>{account}</b>\n"
+                f"🔗 {link_html}\n"
+                f"📅 {date_str}"
+            )
+
+            lines.append(card)
+
+        body = "\n\n".join(lines)
 
         text = (
             "📦 <b>История заданий</b>\n\n"
-            + "\n\n".join(lines)
+            + body
             + f"\n\n📄 Страница {page + 1} из {total_pages}"
         )
+    if len(text) > MAX_MESSAGE_LENGTH:
+        text = text[:MAX_MESSAGE_LENGTH] + "\n\n…"
 
     return {
         "history_text": text,

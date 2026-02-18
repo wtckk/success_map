@@ -34,6 +34,7 @@ def is_admin(data: dict, widget, manager: DialogManager) -> bool:
 
     return bool(from_user and from_user.id in settings.admin_id_list)
 
+
 async def go_profile(
     callback: CallbackQuery,
     widget: Button,

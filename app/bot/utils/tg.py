@@ -76,10 +76,11 @@ async def notify_admins_user_registered(
 
 
 async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
-    username = payload["user"]["username"]
-    username_str = f"@{username}" if username else "без username"
+    username = payload["user"].get("username")
+    username_str = f"@{username}" if username else "—"
 
     city_name = payload["city"]["name"] if payload.get("city") else "—"
+
     persona_map = {
         "M": "👨 Мужского",
         "F": "👩 Женского",
@@ -89,21 +90,30 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
     persona_text = persona_map.get(
         payload["task"].get("required_gender"), "🧑 Не указано"
     )
+
+    assignment_id = str(payload["assignment"]["id"])
+
+    link_html = f"{payload['task']['link']}"
+
+    example_block = (
+        f"\n\n✍️ <b>Пример отзыва:</b>\n{payload['task']['example_text']}"
+        if payload["task"]["example_text"]
+        else ""
+    )
+
     text = (
         "📤 <b>Новый отчёт</b>\n\n"
-        f"👤 Пользователь: {payload['user']['full_name'] or '—'} ({username_str})\n"
-        f"🆔 Telegram ID: <code>{payload['user']['tg_id']}</code>\n\n"
-        f"📦 <b>ТЗ задания</b>:\n"
-        f"{payload['task']['text']}\n\n"
-        + (
-            f"✍️ <b>Текст задания:</b>\n{payload['task']['example_text']}\n\n"
-            if payload["task"]["example_text"]
-            else ""
-        )
-        + f"🗣 <b>От какого лица нужно было оставить отзыв:</b> {persona_text}\n\n"
-        + f"🔗 <b>Ссылка:</b> {payload['task']['link']}\n"
-        f"👤 Аккаунт: <code>{payload['report']['account_name']}</code>\n"
-        f"🏙 Город: {city_name}"
+        f"🆔 <b>ID задания:</b> <code>{assignment_id}</code>\n\n"
+        f"👤 <b>Исполнитель:</b> {payload['user']['full_name'] or '—'}({username_str})\n"
+        f"📱 TG ID: <code>{payload['user']['tg_id']}</code>\n\n"
+        f"📦 <b>Текст задания:</b>\n"
+        f"{payload['task']['text']}"
+        f"{example_block}\n\n"
+        f"🗣 <b>От какого лица:</b> {persona_text}\n"
+        f"🌐 <b>Ссылка:</b> {link_html}\n"
+        f"👤 <b>Аккаунт в отзыве:</b> "
+        f"<code>{payload['report']['account_name']}</code>\n\n"
+        f"🏙 Город: {city_name}\n\n"
     )
 
     for admin_id in settings.admin_id_list:
@@ -112,9 +122,7 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
                 chat_id=admin_id,
                 photo=payload["report"]["photo_file_id"],
                 caption=text,
-                reply_markup=admin_review_keyboard(
-                    assignment_id=str(payload["assignment"]["id"])
-                ),
+                reply_markup=admin_review_keyboard(assignment_id=assignment_id),
                 parse_mode=ParseMode.HTML,
             )
 
@@ -123,10 +131,12 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
                 admin_tg_id=admin_id,
                 message_id=msg.message_id,
             )
+
         except Exception:
             logger.exception(
-                "Не удалось отправить отчёт админу admin_id=%s",
+                "REPORT_NOTIFY_ERROR | admin_id=%s assignment_id=%s",
                 admin_id,
+                assignment_id,
             )
 
 
@@ -149,19 +159,27 @@ async def notify_user_about_review(
     tg_id: int,
     approved: bool,
     task_text: str,
+    reason: str | None = None,
 ):
+    task_preview = task_text[:120] + "..." if len(task_text) > 120 else task_text
+
     if approved:
         text = (
             "✅ <b>Отчёт принят</b>\n\n"
-            f"📦 Задание: <b>{task_text}</b>\n\n"
-            "Спасибо за выполнение задания!\n"
-            "Вы можете взять новое задание в разделе «Задания»."
+            f"📦 <b>Задание:</b>\n"
+            f"{task_preview}\n\n"
+            "🎉 Спасибо за выполнение!\n"
+            "Вы можете взять новое задание в разделе <b>«Задания»</b>."
         )
     else:
+        reason_block = f"\n\n💬 <b>Причина отклонения:</b>\n{reason}" if reason else ""
+
         text = (
             "❌ <b>Отчёт отклонён</b>\n\n"
-            f"📦 Задание: <b>{task_text}</b>\n\n"
-            "К сожалению, отчёт не прошёл проверку.\n"
+            f"📦 <b>Задание:</b>\n"
+            f"{task_preview}"
+            f"{reason_block}\n\n"
+            "Попробуйте взять новое задание."
         )
 
     try:
@@ -171,11 +189,11 @@ async def notify_user_about_review(
             parse_mode=ParseMode.HTML,
             reply_markup=back_to_menu_kb(),
         )
+
+        logger.info(f"REVIEW_NOTIFY_USER | tg_id={tg_id} approved={approved}")
+
     except Exception:
-        logger.exception(
-            "Не удалось отправить уведомление пользователю tg_id=%s",
-            tg_id,
-        )
+        logger.exception(f"REVIEW_NOTIFY_ERROR | tg_id={tg_id}")
 
 
 async def notify_user_about_approval(
@@ -185,22 +203,33 @@ async def notify_user_about_approval(
     approved: bool,
     comment: str | None = None,
 ):
-    reply_markup_menu = None
     if tg_id in settings.admin_id_list:
         return
+
+    reply_markup_menu = None
+
     if approved:
-        text = "✅ <b>Регистрация одобрена</b>\n\nДобро пожаловать!"
+        text = (
+            "🎉 <b>Регистрация одобрена!</b>\n\n"
+            "Добро пожаловать в систему 👋\n\n"
+            "Теперь вам доступны задания.\n\n"
+            "💰 Начните выполнять и зарабатывать уже сейчас."
+        )
+
         reply_markup_menu = go_main_menu_kb()
+
     else:
         text = (
-            "❌ <b>Регистрация отклонена</b>\n\n"
+            "❌ <b>Регистрация не одобрена</b>\n\n"
             "К сожалению, администратор отклонил вашу заявку."
         )
 
         if comment:
-            text += f"\n\n💬 <b>Комментарий:</b>\n{comment}"
+            text += f"\n\n💬 <b>Комментарий администратора:</b>\n{comment}"
 
-        text += "\n\nЕсли вы считаете, что это ошибка — обратитесь к администратору."
+        text += (
+            "\n\nЕсли вы считаете, что произошла ошибка, свяжитесь с администратором."
+        )
 
     try:
         await bot.send_message(
@@ -209,6 +238,7 @@ async def notify_user_about_approval(
             parse_mode=ParseMode.HTML,
             reply_markup=reply_markup_menu,
         )
+
     except Exception:
         logger.exception(
             "Не удалось отправить approval-уведомление пользователю tg_id=%s",

@@ -1,6 +1,7 @@
 import logging
 
 from aiogram import Router, F
+from aiogram.enums import ParseMode
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 
@@ -42,18 +43,45 @@ async def start_handler(
             referrer_id=referrer.id if referrer else None,
         )
 
+        if referrer:
+            await message.answer(
+                "🎁 <b>Вы пришли по приглашению!</b>\n\n",
+                parse_mode=ParseMode.HTML,
+            )
+
     if user.full_name:
         if user.approval_status == UserApprovalStatus.APPROVED:
-            await dialog_manager.start(MainMenuSG.main)
+            await message.answer(
+                "👋 <b>С возвращением!</b>\n\nРады видеть вас снова 🚀",
+                parse_mode=ParseMode.HTML,
+            )
+            await dialog_manager.start(
+                MainMenuSG.main,
+                mode=StartMode.RESET_STACK,
+            )
         else:
-            await dialog_manager.start(RegistrationSG.waiting)
+            await message.answer(
+                "⏳ <b>Заявка на проверке</b>\n\n"
+                "Администратор ещё рассматривает вашу регистрацию.\n\n"
+                "Мы уведомим вас после одобрения.",
+                parse_mode=ParseMode.HTML,
+            )
+            await dialog_manager.start(
+                RegistrationSG.waiting,
+                mode=StartMode.RESET_STACK,
+            )
         return
 
     await message.answer(
-        "👋 Добро пожаловать!\n\n"
-        "Этот бот помогает выполнять задания и получать выплаты.\n\n"
-        "Чтобы начать работу, необходимо пройти быструю регистрацию.\n"
-        "Она займёт не больше минуты."
+        "👋 <b>Добро пожаловать!</b>\n\n"
+        "Этот бот помогает выполнять задания и получать выплаты 💰\n\n"
+        "Регистрация займёт меньше 1 минуты.",
+        parse_mode=ParseMode.HTML,
+    )
+
+    await message.answer(
+        "🚀 <b>Начнём создание профиля?</b>",
+        parse_mode=ParseMode.HTML,
     )
 
     await dialog_manager.start(

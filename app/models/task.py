@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 
-from sqlalchemy import String, Text, ForeignKey, DateTime, func
+from sqlalchemy import String, Text, ForeignKey, DateTime, func, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -55,4 +55,28 @@ class Task(Base):
         nullable=True,
     )
 
+    human_code: Mapped[str] = mapped_column(String(16), unique=True)
+
     city = relationship("City")
+
+
+def generate_human_code(task_id: uuid.UUID, source: str) -> str:
+    prefix_map = {
+        "Яндекс Карты": "YAN",
+        "Google Maps": "GGL",
+        "2ГИС": "GIS",
+    }
+
+    prefix = prefix_map.get(source, "MAP")
+    short = task_id.hex[:6].upper()
+
+    return f"{prefix}-{short}"
+
+
+@event.listens_for(Task, "before_insert")
+def set_human_code(mapper, connection, target: Task):
+    if not target.id:
+        target.id = uuid.uuid4()
+
+    if not target.human_code:
+        target.human_code = generate_human_code(target.id, target.source)

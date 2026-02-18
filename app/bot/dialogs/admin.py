@@ -208,7 +208,7 @@ async def unblock_user(c: CallbackQuery, w: Button, m: DialogManager):
 
 async def page_first(c: CallbackQuery, w: Button, m: DialogManager):
     if m.dialog_data.get("page", 0) <= 0:
-        await c.answer()  # ничего не делаем
+        await c.answer()
         return
 
     m.dialog_data["page"] = 0
@@ -518,6 +518,7 @@ async def export_user_stats_excel(c: CallbackQuery, w: Button, m: DialogManager)
     )
     await c.answer("Готово")
 
+
 async def analytics_dynamics_getter(dialog_manager, **kwargs):
     data = await get_daily_completed_stats()
 
@@ -543,7 +544,6 @@ async def analytics_dynamics_getter(dialog_manager, **kwargs):
     prev = None
 
     for day, count in data:
-
         ratio = min(count / scale, 1)
         bar_len = round(ratio * width)
 
@@ -552,7 +552,6 @@ async def analytics_dynamics_getter(dialog_manager, **kwargs):
 
         bar = "▰" * bar_len + "▱" * (width - bar_len)
 
-        # Тренд
         if prev is None:
             trend = "➖"
         elif count > prev:
@@ -567,9 +566,7 @@ async def analytics_dynamics_getter(dialog_manager, **kwargs):
         day_str = f"{day:>{max_day_len}}"
         count_str = f"{count:>{max_digits}}"
 
-        lines.append(
-            f"{day_str}  {bar}  <b>{count_str}</b>  {trend}"
-        )
+        lines.append(f"{day_str}  {bar}  <b>{count_str}</b>  {trend}")
 
     return {"dynamics_text": "\n".join(lines)}
 
@@ -642,7 +639,7 @@ async def back_to_admin_main(c: CallbackQuery, w, m: DialogManager):
 
 
 admin_dialog = Dialog(
-    # 🛠 MAIN MENU
+    # main menu
     Window(
         Const("🛠 <b>Админ-панель</b>\n\nВыберите раздел:"),
         Column(
@@ -670,7 +667,7 @@ admin_dialog = Dialog(
         ),
         state=AdminSG.main,
     ),
-    # 🧾 REPORTS
+    # reports
     Window(
         Const("🧾 <b>Отчёты по заданиям</b>\n\nВыберите период:"),
         Column(
@@ -689,7 +686,7 @@ admin_dialog = Dialog(
         ),
         state=AdminSG.reports,
     ),
-    # 👥 USERS SECTION
+    # users section
     Window(
         Const("👥 <b>Пользователи</b>\n\nВыберите действие:"),
         Column(
@@ -709,7 +706,7 @@ admin_dialog = Dialog(
         ),
         state=AdminSG.users,
     ),
-    # ⚙️ MANAGE TASKS
+    # manage tasks
     Window(
         Const("⚙️ <b>Управление заданиями</b>\n\nВыберите действие:"),
         Column(
@@ -827,7 +824,7 @@ admin_dialog = Dialog(
         getter=analytics_top_getter,
         state=AdminSG.analytics_top,
     ),
-    # 📈 USER LOOKUP
+    # user lookup
     Window(
         Const(
             "📈 <b>Информация о пользователе</b>\n\n"
@@ -846,7 +843,7 @@ admin_dialog = Dialog(
         ),
         state=AdminSG.user_lookup,
     ),
-    # 👤 USER TASKS
+    # user tasks
     Window(
         Format(
             "📈 <b>Статистика пользователя</b>\n\n"
@@ -910,7 +907,7 @@ admin_dialog = Dialog(
         state=AdminSG.user_tasks,
         disable_web_page_preview=True,
     ),
-    # 📥 IMPORT
+    # import
     Window(
         Const(
             "📥 <b>Импорт заданий из Excel</b>\n\n"

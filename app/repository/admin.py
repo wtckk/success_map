@@ -751,21 +751,21 @@ async def get_users_statistics(*, session: AsyncSession) -> dict:
     new_today = await session.scalar(
         select(func.count(User.id)).where(
             User.approval_status == UserApprovalStatus.APPROVED,
-            User.approval_at >= today_start
+            User.approval_at >= today_start,
         )
     )
 
     new_week = await session.scalar(
         select(func.count(User.id)).where(
             User.approval_status == UserApprovalStatus.APPROVED,
-            User.approval_at >= week_start
+            User.approval_at >= week_start,
         )
     )
 
     new_month = await session.scalar(
         select(func.count(User.id)).where(
             User.approval_status == UserApprovalStatus.APPROVED,
-            User.approval_at >= month_start
+            User.approval_at >= month_start,
         )
     )
 

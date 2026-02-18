@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Index
+from sqlalchemy import DateTime, ForeignKey, String, Index, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -23,12 +23,14 @@ class TaskAssignment(Base):
 
     __tablename__ = "task_assignments"
 
+    from sqlalchemy import text
+
     __table_args__ = (
         Index(
             "ux_task_assignments_task_active",
             "task_id",
             unique=True,
-            postgresql_where=(mapped_column("is_archived") == False),  # noqa: E712
+            postgresql_where=text("is_archived = false"),
         ),
     )
     id: Mapped[uuid.UUID] = mapped_column(
@@ -70,6 +72,7 @@ class TaskAssignment(Base):
     )
 
     is_archived: Mapped[bool] = mapped_column(
+        Boolean,
         default=False,
         server_default="false",
         index=True,
@@ -77,3 +80,4 @@ class TaskAssignment(Base):
 
     user = relationship("User")
     task = relationship("Task")
+    reports = relationship("TaskReport", back_populates="assignment")
