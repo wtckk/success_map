@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from html import escape
 
 from aiogram import F
 from aiogram.enums import ParseMode
@@ -17,9 +19,9 @@ from app.repository.task import (
     assign_random_task,
     has_available_tasks_for_source,
     submit_report,
-    save_assignment_report_message_id,
     get_current_assignment,
-    get_submitted_count, get_submitted_assignments,
+    get_submitted_count,
+    get_submitted_assignments,
 )
 from app.repository.user import get_user_by_tg_id
 
@@ -47,6 +49,13 @@ SOURCE_MAP = {
 # helpers
 def user_ctx(user) -> str:
     return f"tg_id={user.tg_id} user_id={user.id}"
+
+
+def get_source_emoji_html(source: str) -> str:
+    for _, (title, _, emoji_id) in SOURCE_MAP.items():
+        if title == source:
+            return f'<tg-emoji emoji-id="{emoji_id}">🗺</tg-emoji>'
+    return "🗺"
 
 
 async def load_user(dialog_manager: DialogManager):
@@ -95,6 +104,7 @@ async def get_task(
     dialog_manager.dialog_data.clear()
     await dialog_manager.switch_to(TasksSG.choose_source)
 
+
 async def choose_source(
     callback: CallbackQuery, button: Button, dialog_manager: DialogManager
 ):
@@ -114,7 +124,6 @@ async def choose_source(
 
     dialog_manager.dialog_data["source"] = source_key
     await dialog_manager.switch_to(TasksSG.choose_gender)
-
 
 
 async def choose_gender(
@@ -184,28 +193,24 @@ async def review_list_getter(dialog_manager: DialogManager, **_):
 
     blocks = []
 
-    source_prefix = {
-        "Яндекс Карты": "Яндекс Карты",
-        "Google Maps": "Google Maps",
-        "2ГИС": "2ГИС",
-    }
-
     for a in assignments:
         task = a.task
         report = a.reports[0] if a.reports else None
 
-        account_name = report.account_name if report else "Не указано"
-
-        prefix = source_prefix.get(task.source, "MAP")
+        account_name = (
+            escape(report.account_name)
+            if report and report.account_name
+            else "Не указано"
+        )
+        example_text = escape(task.example_text) if task.example_text else "—"
+        source_emoji = get_source_emoji_html(task.source)
 
         blocks.append(
-            f"🆔 <b>{prefix}</b>\n"
- 
-            f"🌐 Источник: {task.source}\n"
+            f"{source_emoji} <b><code>{task.human_code}</code></b>\n"
             f"👤 Аккаунт: <b>{account_name}</b>\n"
-            f"📝 {task.example_text}\n"
+            f"📝 <i>{example_text}</i>\n"
             f"📅 Отправлено: {a.submitted_at.strftime('%d.%m.%Y %H:%M')}\n"
-            f"🔗 <a href='{task.link}'>Перейти</a>\n"
+            f"🔗 <a href='{task.link}'>Перейти</a>"
         )
 
     return {"text": "\n\n".join(blocks)}
@@ -229,31 +234,29 @@ async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
         assignment_id = current.id
         task = current.task
 
-        if current:
-            assignment_id = current.id
-            task = current.task
+        persona_map = {
+            "M": "👨 Мужское",
+            "F": "👩 Женское",
+            None: "🧑 Не важно",
+        }
 
-            persona_map = {
-                "M": "👨 Мужское",
-                "F": "👩 Женское",
-                None: "🧑 Не важно",
-            }
+        persona_label = persona_map.get(task.required_gender, "Не указано")
 
-            persona_label = persona_map.get(task.required_gender, "Не указано")
+        example_block = (
+            f"\n\n✍️ <b>Текст отзыва:</b>\n<pre>{escape(task.example_text)}</pre>"
+            if task.example_text
+            else ""
+        )
 
-            example_block = (
-                f"\n\n✍️ <b>Пример отзыва:</b>\n{task.example_text}"
-                if task.example_text
-                else ""
-            )
+        source_emoji = get_source_emoji_html(task.source)
 
-            sections.append(
-                "🟢 <b>Текущее задание</b>\n"
-                f"📝 {task.text}"
-                f"{example_block}\n\n"
-                f"👤 <b>От какого лица:</b> {persona_label}\n"
-                f"🔗 <a href='{task.link}'>Перейти</a>"
-            )
+        sections.append(
+            f"{source_emoji} <code>{task.human_code}</code>\n\n"
+            f"📝 {escape(task.text)}"
+            f"{example_block}\n\n"
+            f"👤 <b>От какого лица:</b> {persona_label}\n"
+            f"🔗 <a href='{escape(task.link)}'>Перейти</a>"
+        )
 
     if submitted_count:
         sections.append(
@@ -268,7 +271,7 @@ async def tasks_getter(dialog_manager: DialogManager, **_) -> dict:
         "state": "assigned" if current else "empty",
         "title": "📦 Задания",
         "text": "\n\n".join(sections),
-        "assignment_id": assignment_id,
+        "assignment_id": str(assignment_id) if assignment_id else None,
         "has_submitted": submitted_count > 0,
     }
 
@@ -310,10 +313,11 @@ async def save_account(
 
 
 async def save_photo(
-    message: Message, widget: MessageInput, dialog_manager: DialogManager
+    message: Message,
+    widget: MessageInput,
+    dialog_manager: DialogManager,
 ):
     user = await load_user(dialog_manager)
-
     assignment_id = dialog_manager.dialog_data["assignment_id"]
 
     logger.info(f"REPORT_SUBMIT | {user_ctx(user)} assignment_id={assignment_id}")
@@ -328,14 +332,21 @@ async def save_photo(
 
     logger.info(f"REPORT_NOTIFY_ADMINS | assignment_id={assignment_id}")
 
-    await dialog_manager.start(TasksSG.empty, mode=StartMode.RESET_STACK)
+    human_code = payload["task"]["human_code"]
 
-    dialog_msg = dialog_manager.middleware_data.get("message")
-    if dialog_msg:
-        await save_assignment_report_message_id(
-            assignment_id=payload["assignment"]["id"],
-            message_id=dialog_msg.message_id,
-        )
+    await dialog_manager.done()
+
+    await message.answer(
+        f"✅ <b>Отчёт по заданию {human_code} отправлен.</b>\n\n"
+        "⏳ Он передан на проверку.\n"
+        "Вы получите уведомление после модерации.",
+        parse_mode="HTML",
+    )
+    await asyncio.sleep(0.8)
+    await dialog_manager.start(
+        TasksSG.empty,
+        mode=StartMode.RESET_STACK,
+    )
 
 
 async def invalid_photo(
@@ -353,6 +364,12 @@ async def back_to_menu(
     await dialog_manager.start(MainMenuSG.main, mode=StartMode.RESET_STACK)
 
 
+async def back_to_tasks_empty(
+    callback: CallbackQuery, button: Button, dialog_manager: DialogManager
+):
+    await dialog_manager.switch_to(TasksSG.empty)
+
+
 tasks_dialog = Dialog(
     Window(
         Format("<b>{title}</b>\n\n{text}"),
@@ -363,7 +380,6 @@ tasks_dialog = Dialog(
             style="primary",
             when=lambda d, *_: d["state"] == "empty",
         ),
-
         CustomEmojiButton(
             Const("📤 Отправить отчёт"),
             id="report",
@@ -371,14 +387,12 @@ tasks_dialog = Dialog(
             style="success",
             when=lambda d, *_: d["state"] == "assigned",
         ),
-
         CustomEmojiButton(
             Const("⏳ Задания в обработке"),
             id="review",
             on_click=lambda c, b, d: d.switch_to(TasksSG.review_list),
             when=lambda d, *_: d.get("has_submitted"),
         ),
-
         Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
         getter=tasks_getter,
         state=TasksSG.empty,
@@ -395,7 +409,7 @@ tasks_dialog = Dialog(
             )
             for key, (title, _, emoji_id) in SOURCE_MAP.items()
         ],
-        Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
+        Button(Const("⬅️ Назад"), id="back", on_click=back_to_tasks_empty),
         state=TasksSG.choose_source,
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
@@ -434,9 +448,21 @@ tasks_dialog = Dialog(
             on_click=lambda c, b, d: d.switch_to(TasksSG.empty),
         ),
         state=TasksSG.review_list,
-        getter=review_list_getter,  # 👈 ВАЖНО
+        getter=review_list_getter,
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
     ),
-
+    Window(
+        Const(
+            "✅ <b>Отчёт успешно отправлен!</b>\n\n"
+            "Вы получите уведомление после проверки."
+        ),
+        Button(
+            Const("📦 В задания"),
+            id="back",
+            on_click=back_to_menu,
+        ),
+        state=TasksSG.report_success,
+        parse_mode=ParseMode.HTML,
+    ),
 )

@@ -8,18 +8,20 @@ def admin_review_keyboard(assignment_id: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
 
     kb.button(
-        text="✅ Одобрить",
+        text="Одобрить",
         callback_data=AdminReviewCB(
             action="approve",
             assignment_id=assignment_id,
         ),
+        style="success",
     )
     kb.button(
-        text="❌ Отклонить",
+        text="Отклонить",
         callback_data=AdminReviewCB(
             action="reject",
             assignment_id=assignment_id,
         ),
+        style="danger",
     )
 
     kb.adjust(2)

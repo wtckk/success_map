@@ -228,9 +228,12 @@ async def get_approved_tasks(
 ) -> list[dict]:
     stmt = (
         select(
+            Task.human_code,
             Task.text,
+            Task.example_text,
             Task.link,
             Task.source,
+            Task.required_gender,
             TaskAssignment.processed_at,
             TaskReport.account_name,
         )
@@ -247,13 +250,25 @@ async def get_approved_tasks(
 
     return [
         {
-            "title": title,
+            "human_code": human_code,
+            "text": text,
+            "example_text": example_text,
             "link": link,
             "source": source,
+            "required_gender": required_gender,
             "processed_at": processed_at,
             "account_name": account_name,
         }
-        for title, link, source, processed_at, account_name in result.all()
+        for (
+            human_code,
+            text,
+            example_text,
+            link,
+            source,
+            required_gender,
+            processed_at,
+            account_name,
+        ) in result.all()
     ]
 
 

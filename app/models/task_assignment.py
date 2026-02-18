@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, UTC
 
-from sqlalchemy import DateTime, ForeignKey, String, Index, Boolean
+from sqlalchemy import DateTime, ForeignKey, String, Index, Boolean, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -49,7 +49,7 @@ class TaskAssignment(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow
+        DateTime(timezone=True), default=datetime.now(UTC), server_default=func.now()
     )
     submitted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -6,12 +6,14 @@ def user_approval_keyboard(user_id: str) -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ Принять",
+                    text="Принять",
                     callback_data=f"user_approve:{user_id}",
+                    style="success",
                 ),
                 InlineKeyboardButton(
-                    text="❌ Отклонить",
+                    text="Отклонить",
                     callback_data=f"user_reject:{user_id}",
+                    style="danger",
                 ),
             ]
         ]

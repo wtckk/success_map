@@ -78,12 +78,14 @@ async def admin_review_handler(
 
     status_text = "✅ <b>Одобрено</b>" if approve else "❌ <b>Отклонено</b>"
     time_str = datetime.now(MSC_TZ).strftime("%Y-%m-%d %H:%M")
+
+    original_caption = callback.message.html_text
     new_caption = (
-        callback.message.caption
+        original_caption
         + "\n\n"
         + status_text
         + f"\n👨‍⚖️ Администратор: @{callback.from_user.username or callback.from_user.id}"
-          f"\n🕒 Время: {time_str}"
+        f"\n🕒 Время: {time_str}"
     )
 
     messages = await get_admin_messages_by_assignment(assignment_id=assignment.id)
@@ -104,9 +106,11 @@ async def admin_review_handler(
 
     await notify_user_about_review(
         bot=bot,
+        dispatcher=dispatcher,
         tg_id=assignment.user.tg_id,
         approved=approve,
-        task_text=assignment.task.text,
+        human_code=assignment.task.human_code,
+        source=assignment.task.source,
     )
 
     await callback.answer("Готово")

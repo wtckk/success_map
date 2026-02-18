@@ -74,7 +74,6 @@ def parse_gender(value) -> str | None:
     raise ImportRowError(f"Неизвестный пол: {value}")
 
 
-
 @connection()
 async def import_tasks_from_excel(
     *,
@@ -214,4 +213,3 @@ async def import_tasks_from_excel(
         await session.rollback()
         logger.exception("Критическая ошибка во время импорта")
         return 0, ["Критическая ошибка импорта. Проверьте логи сервера."]
-

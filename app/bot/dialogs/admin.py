@@ -1,6 +1,7 @@
 import io
 import statistics
 from datetime import timedelta, timezone, datetime
+from html import escape
 from math import ceil
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from aiogram_dialog.widgets.input import TextInput, MessageInput
 
 
 from app.bot.dialogs.states import AdminSG, MainMenuSG
+from app.bot.utils.tg import get_source_emoji_html
 from app.core.settings import settings
 from app.repository.admin import (
     export_users_to_excel,
@@ -27,13 +29,25 @@ from app.repository.admin import (
     get_user_weekly_approved_count,
 )
 from app.repository.admin_report import import_tasks_from_excel
-from app.repository.task import get_tasks_statistics
+from app.repository.task import get_tasks_statistics, get_assigned_tasks_page
 
 MSC_TZ = timezone(timedelta(hours=3))
 
 PAGE_SIZE = 5
 
 TEMPLATE_PATH = Path("app/static/template.xlsx")
+
+
+def format_duration(delta: timedelta) -> str:
+    total_minutes = int(delta.total_seconds() // 60)
+
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+
+    if hours:
+        return f"{hours}ч"
+    return f"{minutes}м"
+
 
 
 async def open_import_tasks(c: CallbackQuery, w: Button, m: DialogManager):
@@ -49,6 +63,85 @@ def format_minutes(value: float) -> str:
     if hours:
         return f"{hours}ч {minutes}м"
     return f"{minutes}м"
+
+
+async def assigned_tasks_getter(dialog_manager: DialogManager, **kwargs):
+    page = int(dialog_manager.dialog_data.get("page", 0))
+
+    total_count, items = await get_assigned_tasks_page(
+        page=page,
+        page_size=PAGE_SIZE,
+    )
+
+    total_pages = max(1, ceil(total_count / PAGE_SIZE))
+    page = max(0, min(page, total_pages - 1))
+    dialog_manager.dialog_data["page"] = page
+    dialog_manager.dialog_data["last_page"] = total_pages - 1
+
+    if total_count == 0:
+        return {
+            "assigned_text": "📭 Сейчас нет выданных заданий.",
+            "page_str": "—",
+            "assigned_count": 0,
+        }
+
+    sections = []
+
+    now = datetime.now(MSC_TZ)
+    start_num = page * PAGE_SIZE + 1
+
+    for i, assignment in enumerate(items, start=start_num):
+        task = assignment.task
+        user = assignment.user
+
+        created_at_msc = assignment.created_at.astimezone(MSC_TZ)
+
+        delta = now - created_at_msc
+        duration = format_duration(delta)
+
+        persona_map = {
+            "M": "👨 Мужское",
+            "F": "👩 Женское",
+            None: "🧑 Не важно",
+        }
+
+        persona_label = persona_map.get(task.required_gender, "Не указано")
+
+        example_block = (
+            f"\n\n✍️ <b>Текст отзыва:</b>\n<pre>{escape(task.example_text)}</pre>"
+            if task.example_text
+            else ""
+        )
+
+        source_emoji = get_source_emoji_html(task.source)
+
+        full_name = user.full_name or "—"
+        username = f"@{user.username}" if user.username else ""
+        tg_id = user.tg_id
+
+        user_block = (
+            f"👤 <b>Исполнитель:</b> "
+            f"{escape(full_name)} "
+            f"{escape(f'({username})' if username else '')}\n"
+            f"🆔 <code>{tg_id}</code>\n"
+        )
+
+        section = (
+            f"📌 <b>#{i}</b>  ⏱ <b>{duration}</b>\n"
+            f"{source_emoji} <code>{task.human_code}</code>"
+            f"{example_block}\n\n"
+            f"{user_block}"
+            f"👥 <b>От какого лица:</b> {persona_label}\n"
+            f"🔗 <a href='{escape(task.link)}'>Перейти</a>"
+        )
+
+        sections.append(section)
+
+    return {
+        "assigned_text": "\n\n━━━━━━━━━━━━━━\n\n".join(sections),
+        "page_str": f"{page + 1}/{total_pages}",
+        "assigned_count": total_count,
+    }
 
 
 async def global_stats_getter(dialog_manager: DialogManager, **kwargs):
@@ -720,6 +813,14 @@ admin_dialog = Dialog(
                 id="export_available_tasks",
                 on_click=export_available_tasks,
             ),
+            Button(
+                Const("📋 Выданные задания"),
+                id="assigned_tasks",
+                on_click=lambda c, w, m: m.start(
+                    AdminSG.assigned_tasks,
+                    mode=StartMode.NORMAL,
+                ),
+            ),
         ),
         Row(
             Button(
@@ -728,7 +829,42 @@ admin_dialog = Dialog(
         ),
         state=AdminSG.manage,
     ),
-    # 📊 ANALYTICS
+    Window(
+        Format(
+            "📋 <b>Выданные задания</b>\n\n"
+            "📦 Всего: <b>{assigned_count}</b>\n"
+            "📄 Страница: <b>{page_str}</b>\n\n"
+            "{assigned_text}"
+        ),
+        Row(
+            Button(
+                Const("🔄 Обновить"),
+                id="refresh_assigned",
+                on_click=lambda c, w, m: m.start(
+                    AdminSG.assigned_tasks,
+                    mode=StartMode.NORMAL,
+                ),
+            ),
+            Button(
+                Const("⬅️ Назад"),
+                id="back_manage_from_assigned",
+                on_click=lambda c, w, m: m.start(
+                    AdminSG.manage,
+                    mode=StartMode.NORMAL,
+                ),
+            ),
+        ),
+        Row(
+            Button(Const("⏮️"), id="first_a", on_click=page_first),
+            Button(Const("◀️"), id="prev_a", on_click=page_prev),
+            Button(Const("▶️"), id="next_a", on_click=page_next),
+            Button(Const("⏭️"), id="last_a", on_click=page_last),
+        ),
+        getter=assigned_tasks_getter,
+        state=AdminSG.assigned_tasks,
+        disable_web_page_preview=True,
+    ),
+    # analytics
     Window(
         Const("📊 <b>Аналитика</b>\n\nВыберите раздел:"),
         Column(

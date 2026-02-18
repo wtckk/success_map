@@ -2,13 +2,14 @@ import uuid
 import logging
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select, update, func, exists
+from sqlalchemy import select, update, func, exists, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import settings
 from app.db.session import connection
 from app.models import TaskReport
+from app.models.task_assigment_admin_message import TaskAssignmentAdminMessage
 from app.models.task_assignment import (
     TaskAssignment,
     TaskAssignmentStatus,
@@ -277,10 +278,12 @@ async def submit_report(
         },
         "task": {
             "id": task.id,
+            "human_code": task.human_code,
             "text": task.text,
             "example_text": task.example_text,
             "link": task.link,
             "required_gender": task.required_gender,
+            "source": task.source,
         },
         "city": (
             {
@@ -311,7 +314,6 @@ async def process_assignment(
         return None
 
     if assignment.status != TaskAssignmentStatus.SUBMITTED:
-        # уже обработано
         return assignment
 
     if action == "approve":
@@ -550,3 +552,87 @@ async def get_submitted_assignments(
     )
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@connection()
+async def delete_unsubmitted_tasks(*, session) -> int:
+    """
+    Полностью удаляет Task и всю связанную историю,
+    если задание выдано (ASSIGNED), но отчёт не отправлен.
+    """
+
+    assignment_ids_result = await session.execute(
+        select(TaskAssignment.id, TaskAssignment.task_id).where(
+            TaskAssignment.status == TaskAssignmentStatus.ASSIGNED
+        )
+    )
+
+    rows = assignment_ids_result.all()
+
+    if not rows:
+        return 0
+
+    assignment_ids = [row.id for row in rows]
+    task_ids = [row.task_id for row in rows]
+
+    await session.execute(
+        delete(TaskReport).where(TaskReport.assignment_id.in_(assignment_ids))
+    )
+
+    await session.execute(
+        delete(TaskAssignmentAdminMessage).where(
+            TaskAssignmentAdminMessage.assignment_id.in_(assignment_ids)
+        )
+    )
+
+    await session.execute(
+        delete(TaskAssignment).where(TaskAssignment.id.in_(assignment_ids))
+    )
+
+    await session.execute(delete(Task).where(Task.id.in_(task_ids)))
+
+    await session.commit()
+
+    return len(task_ids)
+
+
+@connection()
+async def get_assigned_tasks_page(
+    *,
+    page: int,
+    page_size: int,
+    session,
+) -> tuple[int, list[TaskAssignment]]:
+    """
+    Возвращает (total_count, items)
+    """
+
+    total_stmt = (
+        select(func.count())
+        .select_from(TaskAssignment)
+        .where(
+            TaskAssignment.status == TaskAssignmentStatus.ASSIGNED,
+            TaskAssignment.is_archived.is_(False),
+        )
+    )
+
+    total_count = await session.scalar(total_stmt)
+
+    stmt = (
+        select(TaskAssignment)
+        .where(
+            TaskAssignment.status == TaskAssignmentStatus.ASSIGNED,
+            TaskAssignment.is_archived.is_(False),
+        )
+        .options(
+            selectinload(TaskAssignment.task),
+            selectinload(TaskAssignment.user),
+        )
+        .order_by(TaskAssignment.created_at.asc())
+        .offset(page * page_size)
+        .limit(page_size)
+    )
+
+    res = await session.execute(stmt)
+
+    return total_count or 0, res.scalars().all()

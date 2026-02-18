@@ -1,4 +1,5 @@
 import logging
+from html import escape
 
 from aiogram_dialog import Dialog, Window, DialogManager, StartMode
 from aiogram_dialog.widgets.text import Format
@@ -7,6 +8,7 @@ from aiogram_dialog.widgets.text import Const
 
 from app.bot.dialogs.info_pages import back_to_menu
 from app.bot.dialogs.states import ProfileSG, ReferralsSG
+from app.bot.utils.tg import get_source_emoji_html
 from app.repository.user import (
     get_profile_data,
     get_user_id_by_tg_id,
@@ -38,40 +40,53 @@ async def history_getter(dialog_manager: DialogManager, **_):
     total_pages = max((len(all_tasks) - 1) // TASKS_PER_PAGE + 1, 1)
     page_tasks = all_tasks[start:end]
 
+    sections = []
+
     if not page_tasks:
         text = "📦 <b>История заданий</b>\n\nПока нет выполненных заданий."
     else:
-        lines = []
-
-        for i, task in enumerate(page_tasks, start + 1):
+        for task in page_tasks:
             date_str = (
                 task["processed_at"].strftime("%d.%m.%Y")
                 if task["processed_at"]
                 else "—"
             )
 
-            source = task.get("source") or "Источник"
-            account = task.get("account_name") or "—"
-            link_html = f"<a href='{task['link']}'>Открыть задание</a>"
+            persona_map = {
+                "M": "👨 Мужского",
+                "F": "👩 Женского",
+                None: "🧑 Не важно",
+            }
 
-            card = (
-                f"🟢 <b>№{i}</b>\n"
-                f"📝 <b>{task['title']}</b>\n"
-                f"🌐 {source}\n"
-                f"👤 Аккаунт: <b>{account}</b>\n"
-                f"🔗 {link_html}\n"
+            persona_label = persona_map.get(task["required_gender"], "🧑 Не указано")
+
+            example_block = (
+                f"\n\n✍️ <b>Текст отзыва:</b>\n<pre>{escape(task['example_text'])}</pre>"
+                if task["example_text"]
+                else ""
+            )
+
+            source_emoji = get_source_emoji_html(task["source"])
+
+            section = (
+                f"{source_emoji} <code>{task['human_code']}</code>"
+                f"{example_block}\n\n"
+                f"👤 <b>От какого лица:</b> {persona_label}\n"
+                f"👤 <b>Аккаунт:</b> <code>{escape(task['account_name'] or '—')}</code>\n"
+                f"🔗 <a href='{escape(task['link'])}'>Перейти</a>\n"
                 f"📅 {date_str}"
             )
 
-            lines.append(card)
+            sections.append(section)
 
-        body = "\n\n".join(lines)
+        body = "\n\n──────────────\n\n".join(sections)
 
         text = (
             "📦 <b>История заданий</b>\n\n"
             + body
             + f"\n\n📄 Страница {page + 1} из {total_pages}"
         )
+
     if len(text) > MAX_MESSAGE_LENGTH:
         text = text[:MAX_MESSAGE_LENGTH] + "\n\n…"
 

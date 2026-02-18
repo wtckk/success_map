@@ -23,5 +23,7 @@ class TaskReport(Base):
 
     account_name: Mapped[str] = mapped_column(String(128))
     photo_file_id: Mapped[str] = mapped_column(String(256))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     assignment = relationship("TaskAssignment", back_populates="reports")

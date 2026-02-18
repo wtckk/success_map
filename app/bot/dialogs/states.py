@@ -56,6 +56,8 @@ class AdminSG(StatesGroup):
     analytics_dynamics = State()
     analytics_top = State()
 
+    assigned_tasks = State()
+
 
 class TasksSG(StatesGroup):
     empty = State()
@@ -66,5 +68,6 @@ class TasksSG(StatesGroup):
 
     report_account = State()
     report_photo = State()
+    report_success = State()
 
     review_list = State()

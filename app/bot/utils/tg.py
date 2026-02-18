@@ -1,3 +1,6 @@
+import asyncio
+from html import escape
+
 from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -6,7 +9,7 @@ from app.models.user import User
 
 import logging
 
-from aiogram import Bot
+from aiogram import Bot, Dispatcher
 
 from app.bot.keyboards.admin_review import admin_review_keyboard
 
@@ -15,6 +18,32 @@ from app.repository.task_admin_message import save_admin_message
 from app.repository.user import save_approval_admin_message
 
 logger = logging.getLogger(__name__)
+
+
+SOURCE_MAP = {
+    "yandex": (
+        "Яндекс Карты",
+        "Яндекс Карты",
+        "5359811897677848798",  # yandex
+    ),
+    "2gis": (
+        "2ГИС",
+        "2ГИС",
+        "5244638999561135703",  # 2gis
+    ),
+    "google": (
+        "Google Maps",
+        "Google Maps",
+        "5343611925282435092",  # google
+    ),
+}
+
+
+def get_source_emoji_html(source: str) -> str:
+    for _, (title, _, emoji_id) in SOURCE_MAP.items():
+        if title == source:
+            return f'<tg-emoji emoji-id="{emoji_id}">🗺</tg-emoji>'
+    return "🗺"
 
 
 async def notify_admins_user_registered(
@@ -78,6 +107,7 @@ async def notify_admins_user_registered(
 async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
     username = payload["user"].get("username")
     username_str = f"@{username}" if username else "—"
+    assignment_id = str(payload["assignment"]["id"])
 
     city_name = payload["city"]["name"] if payload.get("city") else "—"
 
@@ -91,29 +121,27 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
         payload["task"].get("required_gender"), "🧑 Не указано"
     )
 
-    assignment_id = str(payload["assignment"]["id"])
+    source = payload["task"].get("source")
+    source_emoji = get_source_emoji_html(source)
 
-    link_html = f"{payload['task']['link']}"
-
-    example_block = (
-        f"\n\n✍️ <b>Пример отзыва:</b>\n{payload['task']['example_text']}"
-        if payload["task"]["example_text"]
-        else ""
-    )
+    link = escape(payload["task"]["link"])
 
     text = (
         "📤 <b>Новый отчёт</b>\n\n"
-        f"🆔 <b>ID задания:</b> <code>{assignment_id}</code>\n\n"
-        f"👤 <b>Исполнитель:</b> {payload['user']['full_name'] or '—'}({username_str})\n"
-        f"📱 TG ID: <code>{payload['user']['tg_id']}</code>\n\n"
-        f"📦 <b>Текст задания:</b>\n"
-        f"{payload['task']['text']}"
-        f"{example_block}\n\n"
-        f"🗣 <b>От какого лица:</b> {persona_text}\n"
-        f"🌐 <b>Ссылка:</b> {link_html}\n"
+        f"{source_emoji} <code>{payload['task']['human_code']}</code>\n\n"
+        f"✍️ <b>Текст отзыва:</b>\n"
+        f"<pre>{escape(payload['task']['example_text'])}</pre>\n\n"
         f"👤 <b>Аккаунт в отзыве:</b> "
-        f"<code>{payload['report']['account_name']}</code>\n\n"
-        f"🏙 Город: {city_name}\n\n"
+        f"<code>{escape(payload['report']['account_name'])}</code>\n"
+        f'🔗 <a href="{link}">Перейти</a>\n'
+        f"🗣 <b>От какого лица:</b> {persona_text}\n\n"
+        f"👤 <b>Исполнитель:</b> "
+        f"{escape(payload['user']['full_name'] or '—')} ({username_str})\n"
+        f"📱 TG ID: <code>{payload['user']['tg_id']}</code>\n"
+        f"📌 Assignment: <code>{payload['assignment']['id']}</code>\n"
+        f"📅 Отправлено: "
+        f"{payload['assignment']['submitted_at'].strftime('%d.%m.%Y %H:%M')}\n"
+        f"🏙 Город: {escape(city_name)}"
     )
 
     for admin_id in settings.admin_id_list:
@@ -127,7 +155,7 @@ async def notify_admins_about_report(bot: Bot, payload: dict) -> None:
             )
 
             await save_admin_message(
-                assignment_id=payload["assignment"]["id"],
+                assignment_id=assignment_id,
                 admin_tg_id=admin_id,
                 message_id=msg.message_id,
             )
@@ -155,31 +183,31 @@ def back_to_menu_kb() -> InlineKeyboardMarkup:
 
 async def notify_user_about_review(
     bot: Bot,
+    dispatcher: Dispatcher,
     *,
     tg_id: int,
     approved: bool,
-    task_text: str,
+    human_code: str,
+    source: str,
     reason: str | None = None,
 ):
-    task_preview = task_text[:120] + "..." if len(task_text) > 120 else task_text
+    source_emoji = get_source_emoji_html(source)
 
     if approved:
         text = (
             "✅ <b>Отчёт принят</b>\n\n"
-            f"📦 <b>Задание:</b>\n"
-            f"{task_preview}\n\n"
-            "🎉 Спасибо за выполнение!\n"
+            f"{source_emoji} <code>{human_code}</code>\n\n"
+            "Ваш отчёт успешно прошёл проверку.\n"
             "Вы можете взять новое задание в разделе <b>«Задания»</b>."
         )
     else:
-        reason_block = f"\n\n💬 <b>Причина отклонения:</b>\n{reason}" if reason else ""
+        reason_block = f"\n\n💬 <b>Причина:</b>\n{escape(reason)}" if reason else ""
 
         text = (
             "❌ <b>Отчёт отклонён</b>\n\n"
-            f"📦 <b>Задание:</b>\n"
-            f"{task_preview}"
+            f"{source_emoji} <code>{human_code}</code>\n"
             f"{reason_block}\n\n"
-            "Попробуйте взять новое задание."
+            "Вы можете взять новое задание в разделе <b>«Задания»</b>."
         )
 
     try:
@@ -187,8 +215,17 @@ async def notify_user_about_review(
             chat_id=tg_id,
             text=text,
             parse_mode=ParseMode.HTML,
+        )
+
+        await asyncio.sleep(0.8)
+
+        await bot.send_message(
+            chat_id=tg_id,
+            text="Вы можете продолжить работу:",
             reply_markup=back_to_menu_kb(),
         )
+
+        logger.info(f"REVIEW_NOTIFY_USER | tg_id={tg_id} approved={approved}")
 
         logger.info(f"REVIEW_NOTIFY_USER | tg_id={tg_id} approved={approved}")
 
