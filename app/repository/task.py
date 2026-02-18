@@ -2,13 +2,14 @@ import uuid
 import logging
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select, update, func, exists
+from sqlalchemy import select, update, func, exists, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import settings
 from app.db.session import connection
 from app.models import TaskReport
+from app.models.task_assigment_admin_message import TaskAssignmentAdminMessage
 from app.models.task_assignment import (
     TaskAssignment,
     TaskAssignmentStatus,
@@ -550,3 +551,45 @@ async def get_submitted_assignments(
     )
     res = await session.execute(stmt)
     return res.scalars().all()
+
+
+@connection()
+async def delete_unsubmitted_tasks(*, session) -> int:
+    """
+    Полностью удаляет Task и всю связанную историю,
+    если задание выдано (ASSIGNED), но отчёт не отправлен.
+    """
+
+    assignment_ids_result = await session.execute(
+        select(TaskAssignment.id, TaskAssignment.task_id).where(
+            TaskAssignment.status == TaskAssignmentStatus.ASSIGNED
+        )
+    )
+
+    rows = assignment_ids_result.all()
+
+    if not rows:
+        return 0
+
+    assignment_ids = [row.id for row in rows]
+    task_ids = [row.task_id for row in rows]
+
+    await session.execute(
+        delete(TaskReport).where(TaskReport.assignment_id.in_(assignment_ids))
+    )
+
+    await session.execute(
+        delete(TaskAssignmentAdminMessage).where(
+            TaskAssignmentAdminMessage.assignment_id.in_(assignment_ids)
+        )
+    )
+
+    await session.execute(
+        delete(TaskAssignment).where(TaskAssignment.id.in_(assignment_ids))
+    )
+
+    await session.execute(delete(Task).where(Task.id.in_(task_ids)))
+
+    await session.commit()
+
+    return len(task_ids)

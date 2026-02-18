@@ -1,6 +1,10 @@
 import logging
 
-from app.repository.task import archive_rejected_assignments, archive_assignment_by_id
+from app.repository.task import (
+    archive_rejected_assignments,
+    archive_assignment_by_id,
+    delete_unsubmitted_tasks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,4 +29,16 @@ async def archive_rejected_later(assignment_id: int) -> None:
         logger.info(
             "Assignment %s archived after rejection delay",
             assignment_id,
+        )
+
+
+async def run_unsubmitted_cleanup() -> None:
+    logger.info("Start cleanup of unsubmitted tasks")
+
+    deleted = await delete_unsubmitted_tasks()
+
+    if deleted:
+        logger.info(
+            "Deleted %s unsubmitted tasks with full history",
+            deleted,
         )

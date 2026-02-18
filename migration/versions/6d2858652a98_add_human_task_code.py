@@ -5,6 +5,7 @@ Revises: 6014d7d351d2
 Create Date: 2026-02-18 18:49:47.370372
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -12,8 +13,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '6d2858652a98'
-down_revision: Union[str, Sequence[str], None] = '6014d7d351d2'
+revision: str = "6d2858652a98"
+down_revision: Union[str, Sequence[str], None] = "6014d7d351d2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -46,6 +47,7 @@ def upgrade() -> None:
         "tasks",
         ["human_code"],
     )
+
 
 def downgrade() -> None:
     """Downgrade schema."""

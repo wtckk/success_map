@@ -19,7 +19,8 @@ from app.repository.task import (
     submit_report,
     save_assignment_report_message_id,
     get_current_assignment,
-    get_submitted_count, get_submitted_assignments,
+    get_submitted_count,
+    get_submitted_assignments,
 )
 from app.repository.user import get_user_by_tg_id
 
@@ -95,6 +96,7 @@ async def get_task(
     dialog_manager.dialog_data.clear()
     await dialog_manager.switch_to(TasksSG.choose_source)
 
+
 async def choose_source(
     callback: CallbackQuery, button: Button, dialog_manager: DialogManager
 ):
@@ -114,7 +116,6 @@ async def choose_source(
 
     dialog_manager.dialog_data["source"] = source_key
     await dialog_manager.switch_to(TasksSG.choose_gender)
-
 
 
 async def choose_gender(
@@ -200,7 +201,6 @@ async def review_list_getter(dialog_manager: DialogManager, **_):
 
         blocks.append(
             f"🆔 <b>{prefix}</b>\n"
- 
             f"🌐 Источник: {task.source}\n"
             f"👤 Аккаунт: <b>{account_name}</b>\n"
             f"📝 {task.example_text}\n"
@@ -363,7 +363,6 @@ tasks_dialog = Dialog(
             style="primary",
             when=lambda d, *_: d["state"] == "empty",
         ),
-
         CustomEmojiButton(
             Const("📤 Отправить отчёт"),
             id="report",
@@ -371,14 +370,12 @@ tasks_dialog = Dialog(
             style="success",
             when=lambda d, *_: d["state"] == "assigned",
         ),
-
         CustomEmojiButton(
             Const("⏳ Задания в обработке"),
             id="review",
             on_click=lambda c, b, d: d.switch_to(TasksSG.review_list),
             when=lambda d, *_: d.get("has_submitted"),
         ),
-
         Button(Const("⬅️ В меню"), id="menu", on_click=back_to_menu),
         getter=tasks_getter,
         state=TasksSG.empty,
@@ -438,5 +435,4 @@ tasks_dialog = Dialog(
         parse_mode=ParseMode.HTML,
         disable_web_page_preview=True,
     ),
-
 )

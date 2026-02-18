@@ -83,7 +83,7 @@ async def admin_review_handler(
         + "\n\n"
         + status_text
         + f"\n👨‍⚖️ Администратор: @{callback.from_user.username or callback.from_user.id}"
-          f"\n🕒 Время: {time_str}"
+        f"\n🕒 Время: {time_str}"
     )
 
     messages = await get_admin_messages_by_assignment(assignment_id=assignment.id)
