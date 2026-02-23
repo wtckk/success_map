@@ -66,7 +66,7 @@ async def update_user_approval_messages(
     admin = await get_user_by_tg_id(tg_id=admin_tg_id)
     text = (
         f"{status}\n\n"
-        f"👤 ФИО: {user.full_name}\n"
+        f"👤 ФИО: {user.full_name} ({"@" + user.username if user.username else "—"})\n"
         f"📞 Телефон: {user.phone}\n"
         f"🏙 Город: {user.city.name if user.city else '—'}\n"
         f"⚧ Пол: {'Мужской' if user.gender == 'M' else 'Женский'}\n"

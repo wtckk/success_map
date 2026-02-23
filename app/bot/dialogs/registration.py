@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import logging
 import uuid
@@ -37,6 +35,8 @@ from app.repository.user import (
 logger = logging.getLogger(__name__)
 
 
+# helpers
+
 def progress_header(step: int, total: int = 4) -> str:
     return f"👤 <b>Создание профиля</b>\n\nШаг {step} из {total}\n\n"
 
@@ -55,6 +55,8 @@ def phone_keyboard() -> ReplyKeyboardMarkup:
         one_time_keyboard=True,
     )
 
+
+# handlers
 
 async def on_full_name(
     message: Message,
@@ -104,6 +106,7 @@ async def on_phone_contact(
 
 async def cities_getter(dialog_manager: DialogManager, **kwargs: Any) -> dict:
     cities = await get_all_cities()
+    logger.info("Cities loaded: %s", len(cities))
     return {"cities": cities}
 
 
@@ -111,10 +114,11 @@ async def on_city_selected(
     callback: CallbackQuery,
     widget: Select,
     dialog_manager: DialogManager,
-    city_id: uuid.UUID,
+    city_id: str,  # ВСЕГДА строка из callback
 ) -> None:
-    dialog_manager.dialog_data["city_id"] = city_id
+    dialog_manager.dialog_data["city_id"] = city_id  # сохраняем как str
     logger.info("Регистрация: город выбран %s", city_id)
+
     await callback.answer("✔ Город выбран")
     await dialog_manager.switch_to(RegistrationSG.gender)
 
@@ -127,18 +131,32 @@ async def on_gender_selected(
 ) -> None:
     dialog_manager.dialog_data["gender"] = gender
     logger.info("Регистрация: пол выбран %s", gender)
+
     await callback.answer("✔ Принято")
     await dialog_manager.switch_to(RegistrationSG.confirm)
 
 
 async def confirm_getter(dialog_manager: DialogManager, **kwargs: Any) -> dict:
     cities = await get_all_cities()
-    city_id = dialog_manager.dialog_data.get("city_id")
 
-    city_name = next((c.name for c in cities if c.id == city_id), "Не выбран")
+    city_id_str = dialog_manager.dialog_data.get("city_id")
+    city_name = "Не выбран"
+
+    if city_id_str:
+        try:
+            city_uuid = uuid.UUID(city_id_str)
+            city_name = next(
+                (c.name for c in cities if c.id == city_uuid),
+                "Не выбран",
+            )
+        except Exception:
+            logger.exception("Ошибка при определении города")
 
     gender_map = {"M": "Мужской", "F": "Женский"}
-    gender_ui = gender_map.get(dialog_manager.dialog_data.get("gender"), "Не указан")
+    gender_ui = gender_map.get(
+        dialog_manager.dialog_data.get("gender"),
+        "Не указан",
+    )
 
     return {
         "full_name": dialog_manager.dialog_data.get("full_name", "—"),
@@ -154,31 +172,36 @@ async def finalize_registration(
     dialog_manager: DialogManager,
 ) -> None:
     await callback.message.edit_text("⏳ Сохраняем профиль...")
-    await asyncio.sleep(0.55)
+    await asyncio.sleep(0.4)
     await callback.message.edit_text("🔍 Проверяем данные...")
-    await asyncio.sleep(0.55)
+    await asyncio.sleep(0.4)
     await callback.message.edit_text("🚀 Почти готово...")
-    await asyncio.sleep(0.55)
+    await asyncio.sleep(0.4)
 
     tg_id = callback.from_user.id
     user = await get_user_by_tg_id(tg_id)
 
     if not user:
-        logger.error("Регистрация: пользователь не найден tg_id=%s", tg_id)
-        await callback.message.answer("❗ Ошибка регистрации. Попробуйте снова: /start")
+        logger.error("Пользователь не найден tg_id=%s", tg_id)
+        await callback.message.answer(
+            "❗ Ошибка регистрации. Попробуйте снова: /start"
+        )
         await dialog_manager.done()
         return
 
     try:
+        city_id = uuid.UUID(dialog_manager.dialog_data["city_id"])
+
         await update_user_profile(
             user_id=user.id,
             full_name=dialog_manager.dialog_data["full_name"],
             phone=dialog_manager.dialog_data["phone"],
-            city_id=dialog_manager.dialog_data["city_id"],
+            city_id=city_id,
             gender=dialog_manager.dialog_data["gender"],
         )
+
     except Exception:
-        logger.exception("Регистрация: ошибка сохранения профиля tg_id=%s", tg_id)
+        logger.exception("Ошибка сохранения профиля tg_id=%s", tg_id)
         await callback.message.answer(
             "❗ Не удалось сохранить профиль. Попробуйте: /start"
         )
@@ -186,6 +209,7 @@ async def finalize_registration(
         return
 
     bot: Bot = dialog_manager.middleware_data["bot"]
+
     user = await get_user_by_tg_id(tg_id)
     if user:
         await notify_admins_user_registered(bot, user)
@@ -199,38 +223,41 @@ async def finalize_registration(
 
 
 registration_dialog = Dialog(
-    # 1) Full name
     Window(
         Const(
-            progress_header(1) + "Как вас зовут?\n\n"
-            "Введите <b>фамилию</b>, <b>имя</b> и (если есть) <b>отчество</b>.\n"
-            "Например: <i>Иванов Иван Иванович</i>"
+            progress_header(1)
+            + "Как вас зовут?\n\n"
+              "Введите <b>фамилию</b>, <b>имя</b> и (если есть) <b>отчество</b>.\n"
+              "Например: <i>Иванов Иван Иванович</i>"
         ),
         TextInput(id="full_name", on_success=on_full_name),
         state=RegistrationSG.full_name,
     ),
-    # 2) Phone
+
     Window(
         Const(
-            progress_header(2) + "📞 <b>Контактный номер</b>\n\n"
-            "Номер нужен для подтверждения выполненных заданий\n"
-            "и начисления выплат.\n\n"
-            "Нажмите кнопку снизу, чтобы отправить номер."
+            progress_header(2)
+            + "📞 <b>Контактный номер</b>\n\n"
+              "Номер нужен для подтверждения выполненных заданий\n"
+              "и начисления выплат.\n\n"
+              "Нажмите кнопку снизу, чтобы отправить номер."
         ),
         MessageInput(func=on_phone_contact, filter=F.contact),
         Back(Const("⬅ Назад")),
         state=RegistrationSG.phone,
     ),
+
     Window(
         Const(
-            progress_header(3) + "🏙 <b>Город работы</b>\n\n"
-            "Выберите город, в котором вы планируете выполнять задания:"
+            progress_header(3)
+            + "🏙 <b>Город работы</b>\n\n"
+              "Выберите город, в котором вы планируете выполнять задания:"
         ),
         ScrollingGroup(
             Select(
                 text=Format("{item.name}"),
                 items="cities",
-                item_id_getter=lambda city: city.id,
+                item_id_getter=lambda city: str(city.id),
                 id="city",
                 on_click=on_city_selected,
             ),
@@ -242,6 +269,7 @@ registration_dialog = Dialog(
         getter=cities_getter,
         state=RegistrationSG.city,
     ),
+
     Window(
         Const(progress_header(4) + "⚧ <b>Последний шаг</b>\n\nВыберите ваш пол:"),
         Row(
@@ -259,7 +287,7 @@ registration_dialog = Dialog(
         Back(Const("⬅ Назад")),
         state=RegistrationSG.gender,
     ),
-    # 5) Confirm
+
     Window(
         Format(
             "📋 <b>Проверьте данные</b>\n\n"
@@ -280,6 +308,7 @@ registration_dialog = Dialog(
         getter=confirm_getter,
         state=RegistrationSG.confirm,
     ),
+
     Window(
         Const(
             "🎉 <b>Профиль создан!</b>\n\n"
