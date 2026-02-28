@@ -14,6 +14,7 @@ from aiogram_dialog.widgets.input import TextInput, MessageInput
 from app.bot.dialogs.states import TasksSG, MainMenuSG
 from app.bot.ui.widgets.custom_button import CustomEmojiButton
 from app.bot.utils.tg import notify_admins_about_report
+from app.consts.source_task import SOURCE_MAP
 from app.core.settings import settings
 from app.repository.task import (
     assign_random_task,
@@ -26,25 +27,6 @@ from app.repository.task import (
 from app.repository.user import get_user_by_tg_id
 
 logger = logging.getLogger(__name__)
-
-SOURCE_MAP = {
-    "yandex": (
-        "Яндекс Карты",
-        "Яндекс Карты",
-        "5359811897677848798",  # yandex
-    ),
-    "2gis": (
-        "2ГИС",
-        "2ГИС",
-        "5244638999561135703",  # 2gis
-    ),
-    "google": (
-        "Google Maps",
-        "Google Maps",
-        "5343611925282435092",  # google
-    ),
-}
-
 
 # helpers
 def user_ctx(user) -> str:

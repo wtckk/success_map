@@ -5,6 +5,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.bot.keyboards.user_approval import user_approval_keyboard, go_main_menu_kb
+from app.consts.source_task import SOURCE_MAP
 from app.models.user import User
 
 import logging
@@ -18,26 +19,6 @@ from app.repository.task_admin_message import save_admin_message
 from app.repository.user import save_approval_admin_message
 
 logger = logging.getLogger(__name__)
-
-
-SOURCE_MAP = {
-    "yandex": (
-        "Яндекс Карты",
-        "Яндекс Карты",
-        "5359811897677848798",  # yandex
-    ),
-    "2gis": (
-        "2ГИС",
-        "2ГИС",
-        "5244638999561135703",  # 2gis
-    ),
-    "google": (
-        "Google Maps",
-        "Google Maps",
-        "5343611925282435092",  # google
-    ),
-}
-
 
 def get_source_emoji_html(source: str) -> str:
     for _, (title, _, emoji_id) in SOURCE_MAP.items():

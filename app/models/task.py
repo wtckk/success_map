@@ -65,6 +65,10 @@ def generate_human_code(task_id: uuid.UUID, source: str) -> str:
         "Яндекс Карты": "YAN",
         "Google Maps": "GGL",
         "2ГИС": "GIS",
+        "Zoon": "ZON",
+        "Yell": "YEL",
+        "VK": "VK",
+        "Яндекс Браузер": "YBR",
     }
 
     prefix = prefix_map.get(source, "MAP")

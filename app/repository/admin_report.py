@@ -40,6 +40,7 @@ def parse_source_and_text(link: str) -> tuple[str, str]:
         "maps.app.goo.gl",
     }
 
+
     if any(domain in netloc for domain in google_domains):
         return "Google Maps", "Оставить отзыв в Google Maps"
 
@@ -52,8 +53,25 @@ def parse_source_and_text(link: str) -> tuple[str, str]:
     if any(domain in netloc for domain in yandex_domains):
         return "Яндекс Карты", "Оставить отзыв на Яндекс Картах"
 
+    yandex_browser_domains = {
+        "browser.yandex.ru",
+        "ya.ru",
+    }
+
+    if any(domain in netloc for domain in yandex_browser_domains):
+        return "Яндекс Браузер", "Оставить отзыв через Яндекс Браузер"
+
     if "2gis" in netloc:
         return "2ГИС", "Оставить отзыв в 2ГИС"
+
+    if netloc in {"vk.ru", "vk.com"}:
+        return "VK", "Оставить отзыв во ВКонтакте"
+
+    if "zoon.ru" in netloc:
+        return "Zoon", "Оставить отзыв на Zoon"
+
+    if "yell.ru" in netloc:
+        return "Yell", "Оставить отзыв на Yell"
 
     raise UnknownSourceError(f"Неизвестный источник ссылки: {link}")
 
