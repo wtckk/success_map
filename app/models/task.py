@@ -42,7 +42,7 @@ class Task(Base):
     )
 
     link: Mapped[str] = mapped_column(
-        String(512),
+        Text,
         nullable=False,
     )
     required_gender: Mapped[str | None] = mapped_column(
